@@ -13,6 +13,68 @@ function getClient() {
   return new BedrockAgentCoreClient({ region: REGION });
 }
 
+// Strip <thinking>...</thinking> blocks and stray thinking tags from streamed text
+function createThinkingFilter() {
+  let buffer = '';
+  let inThinking = false;
+
+  return {
+    push(chunk: string): string {
+      let output = '';
+      buffer += chunk;
+
+      while (buffer.length > 0) {
+        if (!inThinking) {
+          const openIdx = buffer.indexOf('<thinking>');
+          if (openIdx === -1) {
+            // Also check for stray <think> tags
+            const thinkIdx = buffer.indexOf('<think>');
+            if (thinkIdx === -1) {
+              // Output all but keep last few chars in case a tag spans chunks
+              const safeLen = Math.max(0, buffer.length - 10);
+              if (safeLen > 0) {
+                output += buffer.slice(0, safeLen);
+                buffer = buffer.slice(safeLen);
+              }
+              break;
+            } else {
+              output += buffer.slice(0, thinkIdx);
+              buffer = buffer.slice(thinkIdx + 7);
+              inThinking = true;
+            }
+          } else {
+            output += buffer.slice(0, openIdx);
+            buffer = buffer.slice(openIdx + 10);
+            inThinking = true;
+          }
+        } else {
+          const closeIdx = buffer.indexOf('</thinking>');
+          if (closeIdx === -1) {
+            const thinkCloseIdx = buffer.indexOf('</think>');
+            if (thinkCloseIdx === -1) {
+              // Still inside thinking block, discard but keep last chars
+              const safeLen = Math.max(0, buffer.length - 12);
+              buffer = buffer.slice(safeLen);
+              break;
+            } else {
+              buffer = buffer.slice(thinkCloseIdx + 8);
+              inThinking = false;
+            }
+          } else {
+            buffer = buffer.slice(closeIdx + 12);
+            inThinking = false;
+          }
+        }
+      }
+      return output;
+    },
+    flush(): string {
+      if (!inThinking && buffer) return buffer;
+      return '';
+    },
+  };
+}
+
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const { messages, sessionId } = body;
@@ -43,6 +105,7 @@ export async function POST(req: NextRequest) {
   });
 
   const encoder = new TextEncoder();
+  const filter = createThinkingFilter();
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -54,11 +117,21 @@ export async function POST(req: NextRequest) {
           if (event.contentBlockDelta) {
             const delta = event.contentBlockDelta.delta;
             if (delta?.text) {
-              controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify({ type: 'text', text: delta.text })}\n\n`)
-              );
+              const cleaned = filter.push(delta.text);
+              if (cleaned) {
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify({ type: 'text', text: cleaned })}\n\n`)
+                );
+              }
             }
           } else if (event.messageStop) {
+            // Flush any remaining buffered text
+            const remaining = filter.flush();
+            if (remaining) {
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({ type: 'text', text: remaining })}\n\n`)
+              );
+            }
             controller.enqueue(
               encoder.encode(`data: ${JSON.stringify({ type: 'stop', reason: event.messageStop.stopReason })}\n\n`)
             );
