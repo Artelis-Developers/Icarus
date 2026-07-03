@@ -37,6 +37,9 @@ export async function POST(req: NextRequest) {
         modelId: MODEL_ID,
       },
     },
+    systemPrompt: [
+      { text: 'You are a helpful, concise AI assistant. Answer questions directly and honestly. Do not invent context about the user\'s intentions or projects. If you don\'t know something, say so.' },
+    ],
   });
 
   const encoder = new TextEncoder();
