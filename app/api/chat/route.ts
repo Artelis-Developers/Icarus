@@ -1,6 +1,5 @@
 import { NextRequest } from 'next/server';
 import { BedrockAgentCoreClient, InvokeHarnessCommand } from '@aws-sdk/client-bedrock-agentcore';
-import { fromContainerMetadata, fromEnv } from '@aws-sdk/credential-providers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -11,14 +10,9 @@ const HARNESS_ARN = process.env.HARNESS_ARN!;
 const MODEL_ID = process.env.BEDROCK_MODEL_ID || 'eu.anthropic.claude-sonnet-4-5-20250929-v1:0';
 
 function getClient() {
-  // Amplify WEB_COMPUTE provides IAM credentials via env vars or container metadata
-  let credentials;
-  if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
-    credentials = fromEnv();
-  } else {
-    credentials = fromContainerMetadata();
-  }
-  return new BedrockAgentCoreClient({ region: REGION, credentials });
+  // Amplify WEB_COMPUTE provides AWS_REGION and credentials via env vars
+  // The SDK auto-resolves credentials from the default chain
+  return new BedrockAgentCoreClient({ region: REGION });
 }
 
 export async function POST(req: NextRequest) {
