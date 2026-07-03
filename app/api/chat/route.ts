@@ -1,21 +1,24 @@
 import { NextRequest } from 'next/server';
+import { BedrockAgentCoreClient, InvokeHarnessCommand } from '@aws-sdk/client-bedrock-agentcore';
+import { fromContainerMetadata, fromEnv } from '@aws-sdk/credential-providers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 const REGION = process.env.HARNESS_REGION || 'eu-north-1';
 const HARNESS_ARN = process.env.HARNESS_ARN!;
 const MODEL_ID = process.env.BEDROCK_MODEL_ID || 'eu.anthropic.claude-sonnet-4-5-20250929-v1:0';
 
-// Lazy-init AWS SDK (avoid loading on cold start until needed)
-let _client: any = null;
-async function getClient() {
-  if (_client) return _client;
-  const { default: boto3 } = await import('child_process');
-  // We use the Python boto3 via a helper script for InvokeHarness
-  // since @aws-sdk/client-bedrock-agentcore doesn't exist yet.
-  // Instead, we'll shell out to a Python script that does the streaming.
-  return null;
+function getClient() {
+  // Amplify WEB_COMPUTE provides IAM credentials via env vars or container metadata
+  let credentials;
+  if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+    credentials = fromEnv();
+  } else {
+    credentials = fromContainerMetadata();
+  }
+  return new BedrockAgentCoreClient({ region: REGION, credentials });
 }
 
 export async function POST(req: NextRequest) {
@@ -29,73 +32,61 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const { spawn } = await import('child_process');
+  // Map to HarnessMessage format
+  const harnessMessages = messages.map((m: { role: string; content: string }) => ({
+    role: (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
+    content: [{ text: m.content }],
+  }));
 
-  const payload = JSON.stringify({
-    messages,
-    sessionId: sessionId || crypto.randomUUID(),
+  const sid = sessionId || crypto.randomUUID();
+
+  const command = new InvokeHarnessCommand({
     harnessArn: HARNESS_ARN,
-    modelId: MODEL_ID,
-    region: REGION,
+    runtimeSessionId: sid,
+    messages: harnessMessages,
+    model: {
+      bedrockModelConfig: {
+        modelId: MODEL_ID,
+      },
+    },
   });
 
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
-    start(controller) {
-      const py = spawn('python', ['-c', PYTHON_SCRIPT], {
-        env: { ...process.env },
-      });
+    async start(controller) {
+      try {
+        const client = getClient();
+        const response = await client.send(command);
 
-      py.stdin.write(payload);
-      py.stdin.end();
-
-      let buffer = '';
-
-      py.stdout.on('data', (data: Buffer) => {
-        buffer += data.toString();
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const evt = JSON.parse(line);
-            if (evt.type === 'text') {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'text', text: evt.text })}\n\n`));
-            } else if (evt.type === 'stop') {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'stop', reason: evt.reason })}\n\n`));
-            } else if (evt.type === 'metadata') {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'metadata', ...evt.data })}\n\n`));
-            } else if (evt.type === 'error') {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', message: evt.message })}\n\n`));
+        // response.stream is an AsyncIterable
+        for await (const event of response.stream) {
+          if (event.contentBlockDelta) {
+            const delta = event.contentBlockDelta.delta;
+            if (delta?.text) {
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({ type: 'text', text: delta.text })}\n\n`)
+              );
             }
-          } catch {
-            // skip non-JSON lines
+          } else if (event.messageStop) {
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ type: 'stop', reason: event.messageStop.stopReason })}\n\n`)
+            );
+          } else if (event.metadata) {
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ type: 'metadata', usage: event.metadata.usage })}\n\n`)
+            );
           }
         }
-      });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify({ type: 'error', message: msg })}\n\n`)
+        );
+      }
 
-      py.stderr.on('data', (data: Buffer) => {
-        const msg = data.toString().trim();
-        if (msg) {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', message: msg })}\n\n`));
-        }
-      });
-
-      py.on('close', () => {
-        // flush remaining buffer
-        if (buffer.trim()) {
-          try {
-            const evt = JSON.parse(buffer);
-            if (evt.type === 'text') {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'text', text: evt.text })}\n\n`));
-            }
-          } catch { /* ignore */ }
-        }
-        controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-        controller.close();
-      });
+      controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+      controller.close();
     },
   });
 
@@ -107,49 +98,3 @@ export async function POST(req: NextRequest) {
     },
   });
 }
-
-const PYTHON_SCRIPT = `
-import sys, json, uuid, boto3
-
-payload = json.loads(sys.stdin.buffer.read().decode())
-region = payload['region']
-harness_arn = payload['harnessArn']
-model_id = payload['modelId']
-session_id = payload['sessionId']
-messages = payload['messages']
-
-# Map role/content to HarnessMessage format
-harness_messages = []
-for m in messages:
-    role = m.get('role', 'user')
-    content = m.get('content', '')
-    if isinstance(content, str):
-        content = [{'text': content}]
-    elif isinstance(content, list) and content and isinstance(content[0], str):
-        content = [{'text': c} for c in content]
-    harness_messages.append({'role': role, 'content': content})
-
-session = boto3.Session(region_name=region)
-client = session.client('bedrock-agentcore', region_name=region)
-
-try:
-    response = client.invoke_harness(
-        harnessArn=harness_arn,
-        runtimeSessionId=session_id,
-        messages=harness_messages,
-        model={'bedrockModelConfig': {'modelId': model_id}}
-    )
-
-    for event in response.get('stream', []):
-        if 'contentBlockDelta' in event:
-            delta = event['contentBlockDelta'].get('delta', {})
-            if 'text' in delta:
-                print(json.dumps({'type': 'text', 'text': delta['text']}), flush=True)
-        elif 'messageStop' in event:
-            reason = event['messageStop'].get('stopReason', 'unknown')
-            print(json.dumps({'type': 'stop', 'reason': reason}), flush=True)
-        elif 'metadata' in event:
-            print(json.dumps({'type': 'metadata', 'data': event['metadata']}), flush=True)
-except Exception as e:
-    print(json.dumps({'type': 'error', 'message': str(e)}), flush=True)
-`;
