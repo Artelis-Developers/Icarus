@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import './globals.css';
+import '@/client/styles/globals.css';
 
 export const metadata: Metadata = {
   title: 'AgentCore Chat',
