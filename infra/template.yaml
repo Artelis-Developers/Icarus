@@ -1,0 +1,95 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "AgentCore Chat — IAM role for Amplify SSR compute to invoke Bedrock AgentCore harness",
+  "Parameters": {
+    "AccountId": {
+      "Type": "String",
+      "Description": "Your 12-digit AWS account ID"
+    },
+    "Region": {
+      "Type": "String",
+      "Default": "eu-north-1",
+      "Description": "AWS region"
+    }
+  },
+  "Resources": {
+    "AmplifyComputeRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": "AmplifyAgentCoreChatRole",
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "amplify.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole",
+              "Condition": {
+                "StringEquals": {
+                  "aws:SourceAccount": { "Ref": "AccountId" }
+                }
+              }
+            },
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "compute.amplify.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "AmplifyAgentCoreInvoke",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "InvokeHarness",
+                  "Effect": "Allow",
+                  "Action": [
+                    "bedrock-agentcore:InvokeHarness",
+                    "bedrock-agentcore:InvokeAgentRuntime",
+                    "bedrock-agentcore:InvokeAgentRuntimeForUser"
+                  ],
+                  "Resource": [
+                    { "Fn::Sub": "arn:aws:bedrock-agentcore:${Region}:${AccountId}:harness/*" },
+                    { "Fn::Sub": "arn:aws:bedrock-agentcore:${Region}:${AccountId}:runtime/*" }
+                  ]
+                },
+                {
+                  "Sid": "BedrockInvoke",
+                  "Effect": "Allow",
+                  "Action": [
+                    "bedrock:InvokeModel",
+                    "bedrock:InvokeModelWithResponseStream"
+                  ],
+                  "Resource": [
+                    "arn:aws:bedrock:*::foundation-model/*",
+                    { "Fn::Sub": "arn:aws:bedrock:${Region}:${AccountId}:*" },
+                    { "Fn::Sub": "arn:aws:bedrock:${Region}::*" }
+                  ]
+                },
+                {
+                  "Sid": "BedrockInferenceProfile",
+                  "Effect": "Allow",
+                  "Action": "bedrock:InvokeModel",
+                  "Resource": { "Fn::Sub": "arn:aws:bedrock:${Region}:${AccountId}:inference-profile/*" }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "ComputeRoleArn": {
+      "Description": "ARN of the Amplify compute role",
+      "Value": { "Fn::GetAtt": ["AmplifyComputeRole", "Arn"] }
+    }
+  }
+}
