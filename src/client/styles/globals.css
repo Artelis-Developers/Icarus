@@ -1,54 +1,81 @@
 :root {
   /* ── Surfaces ── */
-  --bg: #08080b;
-  --bg-elevated: #0e0e14;
-  --surface: #131319;
-  --surface-hover: #1a1a22;
-  --surface-active: #21212b;
+  --bg: #0d1117;
+  --bg-sidebar: #0b0f14;
+  --bg-elevated: #12171d;
+  --surface: #161b22;
+  --surface-alt: #1c2128;
 
-  /* ── Accent ── */
-  --accent: #8b5cf6;
-  --accent-glow: rgba(139, 92, 246, 0.35);
-  --accent-soft: rgba(139, 92, 246, 0.12);
-  --accent-2: #6366f1;
+  /* ── Accent (single swappable token) ── */
+  --accent: #00d68f;
+  --accent-ink: #04130d;
+
+  /* ── Per-agent accent, defaults to primary; overridden per subtree via --agent ── */
+  --agent: var(--accent);
 
   /* ── Text ── */
-  --text: #f4f4f8;
-  --text-secondary: #a1a1b5;
-  --text-tertiary: #5c5c70;
+  --text: #e6edf3;
+  --text-soft: #e0e6ed;
+  --text-secondary: #b1bac4;
+  --text-muted: #7d8590;
+  --text-faint: #6e7681;
+  --text-ghost: #565f6a;
 
   /* ── Borders ── */
-  --border: rgba(255, 255, 255, 0.06);
-  --border-strong: rgba(255, 255, 255, 0.1);
+  --border: #21262d;
+  --border-strong: #30363d;
+  --border-hover: #444c56;
 
   /* ── Status ── */
-  --danger: #ef4444;
-  --success: #22c55e;
+  --danger: #ff6b6b;
+  --danger-soft: rgba(255, 107, 107, 0.12);
 
   /* ── Misc ── */
-  --radius: 0.75rem;
-  --radius-lg: 1.25rem;
-  --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  --font: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
+  --radius-sm: 8px;
+  --radius: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 18px;
+  --transition: 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Fonts are wired via next/font in layout.tsx and exposed as CSS vars */
+  --font-sans: var(--font-dm-sans), system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-dm-mono), ui-monospace, monospace;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
-html, body { height: 100%; overflow: hidden; }
+html, body { height: 100%; }
 
 body {
-  font-family: var(--font);
+  font-family: var(--font-sans);
   background: var(--bg);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
+a { color: #5c7cfa; text-decoration: none; }
+a:hover { color: #7d93fb; }
+
 /* Scrollbar */
-::-webkit-scrollbar { width: 4px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-hover);
+  background-clip: padding-box;
+}
+
+textarea::placeholder { color: var(--text-faint); }
 
 /* Selection */
-::selection { background: var(--accent-soft); }
+::selection { background: rgba(0, 214, 143, 0.22); }
+
+/* ── Shared keyframes ── */
+@keyframes ik-blink { 0%, 60%, 100% { opacity: 0.25; } 30% { opacity: 1; } }
+@keyframes ik-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes ik-toast-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }

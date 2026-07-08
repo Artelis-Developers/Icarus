@@ -1,33 +1,35 @@
-.typing {
+.row {
+  display: flex;
+  gap: 13px;
+  align-items: flex-start;
+  padding: 12px 0;
+}
+
+.avatar {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 9px;
   display: flex;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.75rem 1rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 0.25rem 1rem 1rem 1rem;
-  width: fit-content;
-  animation: slideIn 0.3s ease-out;
-  margin: 0.625rem 0;
+  justify-content: center;
+  color: var(--agent);
+  background: color-mix(in srgb, var(--agent) 16%, transparent);
+}
+
+.dots {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  height: 30px;
 }
 
 .dot {
-  width: 0.4rem;
-  height: 0.4rem;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: var(--text-tertiary);
-  animation: bounce 1.4s infinite ease-in-out both;
+  background: var(--text-muted);
+  animation: ik-blink 1.3s infinite;
 }
-
-.dot:nth-child(1) { animation-delay: -0.32s; }
-.dot:nth-child(2) { animation-delay: -0.16s; }
-
-@keyframes bounce {
-  0%, 80%, 100% { transform: scale(0.5); opacity: 0.3; }
-  40% { transform: scale(1); opacity: 1; }
-}
-
-@keyframes slideIn {
-  from { opacity: 0; transform: translateY(0.5rem); }
-  to { opacity: 1; transform: translateY(0); }
-}
+.dot:nth-child(2) { animation-delay: 0.2s; }
+.dot:nth-child(3) { animation-delay: 0.4s; }
