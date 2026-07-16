@@ -78,12 +78,6 @@ export function useAuth(): AuthContextType {
     // Email only — never me.name / auth.user.name (those are SSO subject strings in prod)
     const email = (fromIdToken || me?.email?.trim() || auth.user.email?.trim() || '').trim();
 
-    console.log('[Icarus auth] resolved email:', email || '(empty)', {
-      fromIdToken: fromIdToken || null,
-      fromMeCache: me?.email || null,
-      fromAuthUser: auth.user.email || null,
-    });
-
     return {
       ...auth,
       user: {

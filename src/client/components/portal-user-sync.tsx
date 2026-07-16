@@ -26,23 +26,12 @@ export function PortalUserSync({ onSynced }: { onSynced?: () => void }) {
       if (!message || typeof message !== 'object') return;
       if (message.type !== 'ms-auth' || message.success === false) return;
 
-      console.log('[Icarus auth] raw ms-auth keys:', Object.keys(message), {
-        hasAccessToken: !!message.access_token,
-        hasIdToken: !!message.id_token,
-        email: message.email ?? null,
-        user_id: message.user_id ?? null,
-      });
-
       const email =
         (typeof message.email === 'string' && message.email.trim()) ||
         (typeof message.id_token === 'string'
           ? emailFromUnverifiedIdToken(message.id_token)
           : undefined) ||
         '';
-      console.log('[Icarus auth] ms-auth email:', email || '(empty)', {
-        fromMessage: typeof message.email === 'string' ? message.email : null,
-        hasIdToken: typeof message.id_token === 'string' && !!message.id_token,
-      });
       if (!email) return;
 
       const id =
@@ -62,7 +51,6 @@ export function PortalUserSync({ onSynced }: { onSynced?: () => void }) {
   useEffect(() => {
     if (!isAuthenticated) return;
     void refreshPortalMeUser().then((profile) => {
-      console.log('[Icarus auth] /auth/me email:', profile?.email || '(empty)', profile);
       if (profile?.email) onSynced?.();
     });
   }, [isAuthenticated, user?.id, onSynced]);
