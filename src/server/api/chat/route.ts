@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { BedrockAgentCoreClient, InvokeHarnessCommand } from '@aws-sdk/client-bedrock-agentcore';
 import { fromTemporaryCredentials } from '@aws-sdk/credential-providers';
+import { withAuth } from '@artelis/auth/server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -66,7 +67,11 @@ function resolveHarnessArn(agentId?: string): string {
   return fallback;
 }
 
-export async function POST(req: NextRequest) {
+// withAuth verifies the portal Cognito JWT (JWKS + tenant directory lookup)
+// before the harness is ever invoked — the trust boundary for this app, since
+// there is no Lambda behind it. The verified identity (`_user`) isn't needed by
+// the harness call itself; the point is that anonymous callers are rejected.
+export const POST = withAuth(async (req: NextRequest, _user) => {
   const body = await req.json();
   const { messages, sessionId, agentId } = body;
 
@@ -149,4 +154,4 @@ export async function POST(req: NextRequest) {
       'Connection': 'keep-alive',
     },
   });
-}
+});

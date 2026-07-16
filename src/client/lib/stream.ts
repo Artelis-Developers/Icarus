@@ -3,6 +3,8 @@
  * Handles SSE parsing, message state, and error recovery.
  */
 
+import { authHeaders } from '@artelis/auth';
+
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
@@ -27,7 +29,9 @@ export async function streamChat(
 ): Promise<void> {
   const response = await fetch('/api/chat', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    // authHeaders() attaches the portal Cognito bearer so the withAuth-protected
+    // route can verify it. Returns {} before the handshake / in standalone dev.
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify({ messages, sessionId, agentId }),
   });
 

@@ -1,0 +1,58 @@
+/* Auth-gate screens — Icarus's own dark/green tokens, so the app never depends
+   on @artelis/theme. Mirrors globals.css custom properties. */
+.screen {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  text-align: center;
+}
+
+.title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.muted {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  max-width: 30rem;
+  line-height: 1.5;
+}
+
+.button {
+  margin-top: 4px;
+  padding: 8px 18px;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter var(--transition);
+}
+.button:hover {
+  filter: brightness(1.08);
+}
+
+.spinner {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  animation: ik-spin 0.7s linear infinite;
+}
+@keyframes ik-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

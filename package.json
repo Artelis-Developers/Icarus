@@ -6,22 +6,25 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@artelis/auth": "^0.6.0",
     "@aws-sdk/client-bedrock-agentcore": "^3.1079.0",
     "@aws-sdk/credential-providers": "^3.1079.0",
     "highlight.js": "^11.11.1",
-    "next": "14.2.30",
-    "react": "18.3.1",
-    "react-dom": "18.3.1",
+    "next": "16.2.4",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
     "react-markdown": "^10.1.0",
     "rehype-highlight": "^7.0.2",
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
-    "@types/node": "^18",
-    "@types/react": "^18",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
     "typescript": "^5"
   }
 }

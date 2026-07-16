@@ -1,26 +1,25 @@
 # `app/` — Next.js Entry Points
 
-**⚠️ These are glue files. Do not add logic here.**
+**⚠️ These are glue files. Keep logic in `src/`.**
 
 ## What each file does
 
 | File | Role |
 |---|---|
-| `layout.tsx` | Root HTML layout. Imports `globals.css`, sets metadata. Nothing else. |
-| `page.tsx` | Home page. Renders `<ChatPage />` from `src/client/pages/`. |
+| `layout.tsx` | Root HTML layout. Imports `globals.css`, wires DM Sans / DM Mono via `next/font`, sets metadata, and wraps children in `<AuthProvider>` (from `src/client/contexts/auth-context`). |
+| `page.tsx` | Home page. Renders `<ChatPage />` wrapped in `<AuthGate>` so nothing shows until portal auth resolves. |
 | `api/chat/route.ts` | One-liner re-export: `export { POST } from '@/server/api/chat/route'`. |
+| `api/auth/validate-origin/route.ts` | Portal origin allowlist handler — `export const { POST } = createValidateOriginHandler()` (from `@artelis/auth/server`). Mandatory for the postMessage handshake; **do not remove.** |
 
 ## Why this pattern?
 
-Next.js App Router requires files in `app/`. We keep them as thin wrappers so:
-
-1. All real code lives under `src/` with clean separation
-2. `app/` never needs to change when refactoring
-3. The boundary between frontend and backend is enforced by the directory structure
+Next.js App Router requires files in `app/`. We keep them as thin wrappers so real code
+lives under `src/` with a clean frontend/backend split. The only things that legitimately
+live in `app/` are the root layout's provider/metadata/font wiring and the auth route above.
 
 ## Can I touch it?
 
 Only if you're:
-- Adding a new route/page (and even then, put the component in `src/client/`)
-- Changing root metadata or fonts
-- Adding a new API endpoint (put the logic in `src/server/`, re-export here)
+- Adding a new route/page (put the component in `src/client/`, the logic in `src/server/`).
+- Changing root metadata, fonts, or the top-level provider stack.
+- Adding a new API endpoint (logic in `src/server/`, thin re-export here).
