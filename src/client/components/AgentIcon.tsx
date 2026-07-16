@@ -23,8 +23,9 @@ export function AgentIcon({ agent, size = 18 }: Props) {
     case 'hr':
       return (
         <svg {...svgBase} {...dims}>
-          <circle cx="12" cy="8" r="4" />
-          <path d="M4 21v-1a6 6 0 0 1 16 0v1" />
+          <circle cx="9" cy="20" r="1" />
+          <circle cx="19" cy="20" r="1" />
+          <path d="M3 4h2l2.4 11.2a2 2 0 0 0 2 1.6h8.8a2 2 0 0 0 2-1.6L22 8H6" />
         </svg>
       );
     case 'dev':

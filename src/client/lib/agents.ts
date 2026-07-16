@@ -21,8 +21,8 @@ export interface Agent {
 
 export const AGENTS: Agent[] = [
   { id: 'general', name: 'General Assistant', desc: 'Everyday help across the group', color: 'var(--accent)', wired: true },
-  { id: 'hr', name: 'HR Bot', desc: 'Salary, vacation & policies', color: '#5c7cfa', wired: false },
   { id: 'dev', name: 'Dev Bot', desc: 'Software ideas & engineering', color: '#ffa94d', wired: false },
+  { id: 'hr', name: 'Order Bot', desc: 'Order products anywhere', color: '#5c7cfa', wired: false },
   { id: 'board', name: 'Ideas & Board', desc: 'Submit ideas & requests', color: '#ffd43b', wired: false },
 ];
 
@@ -41,10 +41,10 @@ export const SUGGESTIONS: Record<AgentId, { title: string; sub: string }[]> = {
     { title: 'Which agent do I need?', sub: 'Not sure who can help — describe your question.' },
   ],
   hr: [
-    { title: 'Vacation balance', sub: 'How many days off do I have left this year?' },
-    { title: 'Salary question', sub: 'When is the next payroll run?' },
-    { title: 'Parental leave', sub: 'What is the policy and how do I apply?' },
-    { title: 'Sick day', sub: 'How do I report an absence correctly?' },
+    { title: 'Get address information', sub: 'Retrieve address information for a specific location.' },
+    { title: 'Find a product', sub: 'Search for the right product for your client\'s needs.' },
+    { title: 'Place an Order', sub: 'Place an order for a product or service.' },
+    { title: 'Track an order', sub: 'Check the status of an existing order.' },
   ],
   dev: [
     { title: 'New software idea', sub: 'Help me scope an internal transcription bot.' },
