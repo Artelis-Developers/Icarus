@@ -111,20 +111,18 @@ export function useChat() {
       const agent = agentById(id);
       if (!agent.wired) {
         wip(`${agent.name} — coming soon`);
-        return; // stay on the current (General) agent
+        return;
       }
-      setActiveId((curActive) => {
-        setConversations((prev) => {
-          const conv = prev.find((c) => c.id === curActive);
-          if (!conv) return prev; // draft: update draftAgentId below
-          return prev.map((c) => (c.id === conv.id ? { ...c, agentId: id } : c));
-        });
-        return curActive;
-      });
-      // update draft too (covers the "new chat" case)
+
+      // Fresh draft for this agent already — no need to reset.
+      if (activeId === 'new' && draftAgentId === id) return;
+
+      setActiveId('new');
       setDraftAgentId(id);
+      setInput('');
+      setTimeout(() => inputRef.current?.focus(), 0);
     },
-    [wip]
+    [wip, activeId, draftAgentId]
   );
 
   /* ── Send ── */
