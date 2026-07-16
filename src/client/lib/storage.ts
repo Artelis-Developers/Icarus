@@ -13,7 +13,7 @@ let available: boolean | null = null;
 function canUseLocalStorage(): boolean {
   if (available !== null) return available;
   try {
-    const probe = '__ikairus_probe__';
+    const probe = '__Icarus_probe__';
     window.localStorage.setItem(probe, '1');
     window.localStorage.removeItem(probe);
     available = true;

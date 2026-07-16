@@ -38,7 +38,7 @@ export function Sidebar({
           <Image src="/CEGECOM_logo_WHITE_NOTEXT.png" alt="Cegecom" width={26} height={26} className={styles.brandMark} />
         </div>
         <div className={styles.brandText}>
-          <div className={styles.brandName}>Ikairus</div>
+          <div className={styles.brandName}>Icarus</div>
           <div className={styles.brandSub}>Artelis · VSE NET · Cegecom</div>
         </div>
       </div>

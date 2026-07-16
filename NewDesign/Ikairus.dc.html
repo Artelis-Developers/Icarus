@@ -37,7 +37,7 @@
         <img src="assets/logo-mark.png" alt="Cegecom" style="width:26px; height:26px; object-fit:contain; filter:brightness(0) saturate(100%) invert(6%) sepia(20%) saturate(1200%) hue-rotate(120deg) brightness(30%);">
       </div>
       <div style="{{ brandTextStyle }}">
-        <div style="font-size:18px; font-weight:700; letter-spacing:-.01em;">Ikairus</div>
+        <div style="font-size:18px; font-weight:700; letter-spacing:-.01em;">Icarus</div>
         <div style="font-size:11px; color:#7d8590; font-weight:500;">Artelis · VSE NET · Cegecom</div>
       </div>
     </div>
@@ -189,7 +189,7 @@
             </button>
           </div>
         </div>
-        <div style="text-align:center; font-size:11px; color:#565f6a; margin-top:9px;">Ikairus can access internal tools · conversations are stored per user in DynamoDB · verify important answers.</div>
+        <div style="text-align:center; font-size:11px; color:#565f6a; margin-top:9px;">Icarus can access internal tools · conversations are stored per user in DynamoDB · verify important answers.</div>
       </div>
     </div>
   </main>
@@ -203,13 +203,13 @@
 }">
 const AGENTS = [
   { id: "general", name: "General Assistant", desc: "Everyday help across the group", color: "#00d68f",
-    system: "You are Ikairus, the general AI assistant for employees of Artelis, VSE NET and Cegecom. Be concise, friendly and practical. You can help draft messages, summarise, explain company processes and route people to the right specialised agent (HR Bot, Dev Bot, Ideas & Board)." },
+    system: "You are Icarus, the general AI assistant for employees of Artelis, VSE NET and Cegecom. Be concise, friendly and practical. You can help draft messages, summarise, explain company processes and route people to the right specialised agent (HR Bot, Dev Bot, Ideas & Board)." },
   { id: "hr", name: "HR Bot", desc: "Salary, vacation & policies", color: "#5c7cfa",
-    system: "You are Ikairus HR Bot for Artelis / VSE NET / Cegecom. You answer HR questions about salary, vacation days, leave policy, benefits and payroll. Be warm, precise and confidential. When exact figures depend on personal records, explain that you would fetch them from the HR system via an internal tool." },
+    system: "You are Icarus HR Bot for Artelis / VSE NET / Cegecom. You answer HR questions about salary, vacation days, leave policy, benefits and payroll. Be warm, precise and confidential. When exact figures depend on personal records, explain that you would fetch them from the HR system via an internal tool." },
   { id: "dev", name: "Dev Bot", desc: "Software ideas & engineering", color: "#ffa94d",
-    system: "You are Ikairus Dev Bot for the Artelis engineering teams. You help with software ideas, architecture (AWS, DynamoDB, Lambda), code and technical decisions. Be technical, pragmatic and specific." },
+    system: "You are Icarus Dev Bot for the Artelis engineering teams. You help with software ideas, architecture (AWS, DynamoDB, Lambda), code and technical decisions. Be technical, pragmatic and specific." },
   { id: "board", name: "Ideas & Board", desc: "Submit ideas & requests", color: "#ffd43b",
-    system: "You are Ikairus Ideas & Board agent. You help employees shape ideas and requests, then structure them so they can be stored in the production database and reviewed by the board. When someone shares an idea, restate it cleanly with a title, summary, value and next step, and confirm you have queued it for the board." },
+    system: "You are Icarus Ideas & Board agent. You help employees shape ideas and requests, then structure them so they can be stored in the production database and reviewed by the board. When someone shares an idea, restate it cleanly with a title, summary, value and next step, and confirm you have queued it for the board." },
 ];
 
 function svg(paths, extra) {
@@ -286,7 +286,7 @@ class Component extends DCLogic {
 
   componentDidMount() {
     try {
-      const raw = localStorage.getItem("ikairus.v1");
+      const raw = localStorage.getItem("Icarus.v1");
       if (raw) {
         const s = JSON.parse(raw);
         if (s && s.conversations) this.setState({ conversations: s.conversations, activeId: s.activeId || "new", draftAgentId: s.draftAgentId || "general" });
@@ -297,7 +297,7 @@ class Component extends DCLogic {
   componentDidUpdate() { this.scrollToBottom(); }
 
   persist() {
-    try { localStorage.setItem("ikairus.v1", JSON.stringify({ conversations: this.state.conversations, activeId: this.state.activeId, draftAgentId: this.state.draftAgentId })); } catch (e) {}
+    try { localStorage.setItem("Icarus.v1", JSON.stringify({ conversations: this.state.conversations, activeId: this.state.activeId, draftAgentId: this.state.draftAgentId })); } catch (e) {}
   }
   setScrollEl = (el) => { this.scrollEl = el; };
   setInputEl = (el) => { this.inputEl = el; };
@@ -406,7 +406,7 @@ class Component extends DCLogic {
       greeting: hasMessages ? "" : "How can I help?",
       emptySub: `You're talking to ${agent.name} — ${agent.desc.toLowerCase()}. Pick a starter or type your own.`,
       activeTitle: conv ? conv.title : "New chat",
-      activeAgentLabel: `${agent.name} · Ikairus`,
+      activeAgentLabel: `${agent.name} · Icarus`,
       activeAgentName: agent.name,
       topAgentIcon: ICONS[agent.id](16),
       topAgentIconSm: ICONS[agent.id](14),

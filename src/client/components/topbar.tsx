@@ -28,7 +28,7 @@ export function TopBar({ title, agentId, onToggleSidebar, onWip }: Props) {
         </span>
         <div className={styles.titles}>
           <div className={styles.title}>{title}</div>
-          <div className={styles.subtitle}>{agent.name} · Ikairus</div>
+          <div className={styles.subtitle}>{agent.name} · Icarus</div>
         </div>
       </div>
 

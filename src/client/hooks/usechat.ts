@@ -5,7 +5,7 @@ import { streamChat, type ChatMessage } from '@/client/lib/stream';
 import { loadJSON, saveJSON } from '@/client/lib/storage';
 import { AGENTS, DEFAULT_AGENT, agentById, type AgentId } from '@/client/lib/agents';
 
-const STORAGE_KEY = 'ikairus.v2';
+const STORAGE_KEY = 'Icarus.v2';
 
 export interface Conversation {
   id: string;

@@ -17,8 +17,8 @@ const dmMono = DM_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Ikairus',
-  description: 'Ikairus — AI assistant for Artelis · VSE NET · Cegecom',
+  title: 'Icarus',
+  description: 'Icarus — AI assistant for Artelis · VSE NET · Cegecom',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

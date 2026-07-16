@@ -74,7 +74,7 @@ export function Composer({ value, onChange, onSubmit, disabled, agentId, inputRe
           </div>
         </div>
         <div className={styles.disclaimer}>
-          Ikairus can access internal tools · conversations are stored per user · verify important answers.
+          Icarus can access internal tools · conversations are stored per user · verify important answers.
         </div>
       </div>
     </div>

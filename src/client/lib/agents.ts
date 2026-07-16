@@ -1,5 +1,5 @@
 /**
- * Agent catalogue for Ikairus.
+ * Agent catalogue for Icarus.
  *
  * Only the "general" agent is wired to the live /api/chat backend right now.
  * Selecting any other agent triggers a WIP toast (see chatpage / useChat) and
