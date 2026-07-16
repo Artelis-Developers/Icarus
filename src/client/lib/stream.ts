@@ -3,7 +3,36 @@
  * Handles SSE parsing, message state, and error recovery.
  */
 
-import { authHeaders } from '@artelis/auth';
+import { getPortalAuth, STORAGE_KEYS } from '@artelis/auth';
+
+/**
+ * Resolve the portal Cognito access token for the Authorization header, trying
+ * three sources in order (fleet convention — mirrors Products' resolveAccessToken):
+ *   1. getPortalAuth().getJWTToken()   — the client's held JWT
+ *   2. getPortalAuth().getAccessToken()
+ *   3. sessionStorage 'portal_tokens'  — the raw handshake payload
+ *
+ * Tier 3 is the one that matters INSIDE the portal iframe: the in-memory
+ * getPortalAuth() singleton is frequently unreachable there even though the
+ * portal DID deliver a token, so a singleton-only helper (@artelis/auth's
+ * authHeaders) sends no header and the withAuth route 401s despite the user
+ * being authenticated. Reading sessionStorage recovers the token.
+ */
+function resolveAccessToken(): string | null {
+  const portal = getPortalAuth();
+  const fromClient = portal?.getJWTToken() ?? portal?.getAccessToken() ?? null;
+  if (fromClient) return fromClient;
+
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.sessionStorage.getItem(STORAGE_KEYS.tokens);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { access_token?: string };
+    return parsed.access_token ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -27,11 +56,15 @@ export async function streamChat(
   onError: (msg: string) => void,
   onDone: () => void
 ): Promise<void> {
+  const token = resolveAccessToken();
   const response = await fetch('/api/chat', {
     method: 'POST',
-    // authHeaders() attaches the portal Cognito bearer so the withAuth-protected
-    // route can verify it. Returns {} before the handshake / in standalone dev.
-    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    headers: {
+      'Content-Type': 'application/json',
+      // Portal Cognito bearer so the withAuth-protected route accepts the call.
+      // Omitted (no token) before the handshake or in standalone dev.
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify({ messages, sessionId, agentId }),
   });
 

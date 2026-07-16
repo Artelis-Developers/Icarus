@@ -51,8 +51,11 @@ CSS Modules. Icarus keeps its **own** token set (green accent) — it does **not
 - `components/auth-gate.tsx` gates the page via `@artelis/auth`'s `AuthGuard`, with
   loading / access-denied / not-signed-in screens styled in Icarus's own tokens (so no
   `@artelis/theme` dependency).
-- `lib/stream.ts` attaches the portal bearer (`authHeaders()`) so the `withAuth`-protected
-  `/api/chat` accepts the request.
+- `lib/stream.ts` attaches the portal bearer via a 3-tier `resolveAccessToken`
+  (`getJWTToken` → `getAccessToken` → `sessionStorage['portal_tokens']`) so the
+  `withAuth`-protected `/api/chat` accepts the request. Tier 3 (sessionStorage) is what makes
+  it work inside the portal iframe, where the in-memory auth singleton is often unreachable —
+  the package's `authHeaders()` helper is singleton-only and 401s there.
 
 ## Component rules
 

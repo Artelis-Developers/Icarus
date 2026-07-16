@@ -75,8 +75,11 @@ Auth is provided by `@artelis/auth`, wired the same way across the 360 fleet:
 - **Server:** `/api/chat`'s handler is wrapped in `withAuth` from `@artelis/auth/server`,
   which verifies the Cognito JWT against the issuing pool's JWKS (pool looked up in
   `DYNAMODB_USER_POOLS_TABLE`). This is the app's only trust boundary — there is no Lambda behind it.
-- **Token attach:** `src/client/lib/stream.ts` sends `Authorization: Bearer <token>` via
-  `authHeaders()` from `@artelis/auth`.
+- **Token attach:** `src/client/lib/stream.ts` sends `Authorization: Bearer <token>`, resolving
+  the token via a 3-tier `resolveAccessToken` (`getJWTToken` → `getAccessToken` →
+  `sessionStorage['portal_tokens']`). The sessionStorage tier is required inside the iframe,
+  where the in-memory auth singleton is often unreachable (the package's `authHeaders()` is
+  singleton-only and would 401 there).
 
 ---
 
@@ -103,8 +106,8 @@ No access keys are passed. On AWS Amplify the SDK picks up credentials from the 
 
 ### 3.3 Request contract (browser → route)
 
-`POST /api/chat` with an `Authorization: Bearer <portal token>` header (the client attaches
-it via `authHeaders()`; `withAuth` rejects the request otherwise) and JSON body:
+`POST /api/chat` with an `Authorization: Bearer <portal token>` header (the client resolves and
+attaches it — see §2.1; `withAuth` rejects the request otherwise) and JSON body:
 
 ```jsonc
 {
