@@ -6,19 +6,41 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 const REGION = process.env.HARNESS_REGION || 'eu-north-1';
-const HARNESS_ARN = process.env.HARNESS_ARN || '';
 const MODEL_ID = process.env.BEDROCK_MODEL_ID || 'eu.amazon.nova-pro-v1:0';
+
+/** Maps UI agent ids to their harness ARN env vars. */
+const HARNESS_BY_AGENT: Record<string, string | undefined> = {
+  general: process.env.HARNESS_ARN,
+  dev: process.env.HARNESS_ARN_REQ_DEV,
+};
 
 function getClient() {
   return new BedrockAgentCoreClient({ region: REGION });
 }
 
+function resolveHarnessArn(agentId?: string): string {
+  const fallback = process.env.HARNESS_ARN || '';
+  const arn = (agentId && HARNESS_BY_AGENT[agentId]) || fallback;
+  if (!arn) {
+    throw new Error(`No harness configured for agent "${agentId || 'general'}"`);
+  }
+  return arn;
+}
+
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { messages, sessionId } = body;
+  const { messages, sessionId, agentId } = body;
 
   if (!messages || !Array.isArray(messages)) {
     return Response.json({ error: 'messages array required' }, { status: 400 });
+  }
+
+  let harnessArn: string;
+  try {
+    harnessArn = resolveHarnessArn(agentId);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return Response.json({ error: msg }, { status: 400 });
   }
 
   const harnessMessages = messages.map((m: { role: string; content: string }) => ({
@@ -29,7 +51,7 @@ export async function POST(req: NextRequest) {
   const sid = sessionId || crypto.randomUUID();
 
   const command = new InvokeHarnessCommand({
-    harnessArn: HARNESS_ARN,
+    harnessArn,
     runtimeSessionId: sid,
     messages: harnessMessages,
     model: {

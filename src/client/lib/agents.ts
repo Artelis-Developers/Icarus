@@ -1,10 +1,9 @@
 /**
  * Agent catalogue for Icarus.
  *
- * Only the "general" agent is wired to the live /api/chat backend right now.
- * Selecting any other agent triggers a WIP toast (see chatpage / useChat) and
- * keeps the active agent on "general". The metadata below (colors, icons,
- * suggestions) still drives the sidebar so the full roster is visible.
+ * Agents with wired: true call /api/chat; the server routes each id to its
+ * harness ARN via env vars (see src/server/api/chat/route.ts). Unwired agents
+ * show a "coming soon" toast when selected.
  */
 
 export type AgentId = 'general' | 'hr' | 'dev' | 'board';
@@ -21,7 +20,7 @@ export interface Agent {
 
 export const AGENTS: Agent[] = [
   { id: 'general', name: 'General Assistant', desc: 'Everyday help across the group', color: 'var(--accent)', wired: true },
-  { id: 'dev', name: 'Dev Bot', desc: 'Software ideas & engineering', color: '#ffa94d', wired: false },
+  { id: 'dev', name: 'Dev Bot', desc: 'Software ideas & engineering', color: '#ffa94d', wired: true },
   { id: 'hr', name: 'Order Bot', desc: 'Order products anywhere', color: '#5c7cfa', wired: false },
   { id: 'board', name: 'Ideas & Board', desc: 'Submit ideas & requests', color: '#ffd43b', wired: false },
 ];

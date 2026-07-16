@@ -193,6 +193,7 @@ export function useChat() {
       await streamChat(
         history,
         sessionId,
+        agentId,
         (chunk) => {
           assistantText += chunk;
           applyAssistant(assistantText);

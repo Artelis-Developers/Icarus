@@ -20,6 +20,7 @@ interface StreamEvent {
 export async function streamChat(
   messages: ChatMessage[],
   sessionId: string,
+  agentId: string,
   onText: (chunk: string) => void,
   onError: (msg: string) => void,
   onDone: () => void
@@ -27,7 +28,7 @@ export async function streamChat(
   const response = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages, sessionId }),
+    body: JSON.stringify({ messages, sessionId, agentId }),
   });
 
   if (!response.ok || !response.body) {
