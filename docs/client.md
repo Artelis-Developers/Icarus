@@ -53,8 +53,9 @@ CSS Modules. Icarus keeps its **own** token set (green accent) — it does **not
   postMessage handshake.
 - Cognito **access** tokens often omit email for SSO users. Icarus enriches `useAuth().user`
   the same way Requests does: prefer id-token `email`, else portal `GET /auth/me` (cached by
-  `PortalUserSync` → `portal-user-profile.ts`), then derive `name` from the email local part
-  (`igor.winandy@…` → "Igor Winandy"). Sidebar footer shows that name/email.
+  `PortalUserSync` → `portal-user-profile.ts`), then derive `name` **only** from the email
+  local part (`igor.winandy@…` → "Igor Winandy"). The Cognito/portal `name` claim is ignored
+  (opaque SSO ids in production). Sidebar footer shows that name/email.
 - `components/auth-gate.tsx` gates the page via `@artelis/auth`'s `AuthGuard`, with
   loading / access-denied / not-signed-in screens styled in Icarus's own tokens (so no
   `@artelis/theme` dependency).

@@ -61,8 +61,9 @@ function resolveIdToken(): string | null {
 /**
  * Wraps the library's `useAuth()`. Cognito access tokens often lack email for
  * SSO users — prefer id-token email, then portal `GET /auth/me` cache.
- * Display name is always derived from the email local part
- * (`igor.winandy@…` → "Igor Winandy"), matching Requests.
+ *
+ * Never use the Cognito/portal `name` claim (opaque SSO ids in production).
+ * Display name is derived only from email (`igor.winandy@…` → "Igor Winandy").
  */
 export function useAuth(): AuthContextType {
   const auth = useLibAuth();
@@ -74,12 +75,16 @@ export function useAuth(): AuthContextType {
     const idToken = resolveIdToken();
     const fromIdToken = idToken ? emailFromUnverifiedIdToken(idToken) : undefined;
     const me = resolvePortalMeUser();
+    // Email only — never me.name / auth.user.name (those are SSO subject strings in prod)
     const email = (fromIdToken || me?.email?.trim() || auth.user.email?.trim() || '').trim();
-    if (!email) return auth;
 
     return {
       ...auth,
-      user: { ...auth.user, email, name: nameFromEmailLocalPart(email) },
+      user: {
+        ...auth.user,
+        email,
+        name: email ? nameFromEmailLocalPart(email) : '',
+      },
     };
     // meRevision bumps after `/auth/me` lands in sessionStorage
     // eslint-disable-next-line react-hooks/exhaustive-deps

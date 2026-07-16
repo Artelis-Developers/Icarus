@@ -4,6 +4,7 @@ import Image from 'next/image';
 import type { Agent, AgentId } from '../lib/agents';
 import type { Conversation } from '../hooks/usechat';
 import { useAuth } from '../contexts/auth-context';
+import { nameFromEmailLocalPart } from '../lib/display-identity';
 import { agentById } from '../lib/agents';
 import { AgentIcon } from './AgentIcon';
 import styles from '../styles/sidebar.module.css';
@@ -32,8 +33,10 @@ export function Sidebar({
   onWip,
 }: Props) {
   const { user } = useAuth();
-  const displayName = user?.name?.trim() || 'Signed in';
-  const displayEmail = user?.email?.trim() || 'Artelis Group';
+  const displayEmail = user?.email?.trim() || '';
+  // Name only from email — never Cognito/portal `name` (SSO id strings break the UI)
+  const displayName = displayEmail ? nameFromEmailLocalPart(displayEmail) : 'Signed in';
+  const displaySub = displayEmail || 'Artelis Group';
 
   return (
     <aside className={`${styles.aside} ${collapsed ? styles.collapsed : ''}`}>
@@ -106,7 +109,7 @@ export function Sidebar({
       </div>
 
       <div className={styles.footer}>
-        <div className={styles.avatar} title={displayEmail}>
+        <div className={styles.avatar} title={displaySub}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="8" r="4" />
             <path d="M4 21v-1a6 6 0 0 1 16 0v1" />
@@ -114,7 +117,7 @@ export function Sidebar({
         </div>
         <div className={`${styles.footerText} ${styles.hideCollapsed}`}>
           <div className={styles.footerName}>{displayName}</div>
-          <div className={styles.footerSub}>{displayEmail}</div>
+          <div className={styles.footerSub}>{displaySub}</div>
         </div>
         <button
           className={`${styles.gear} ${styles.hideCollapsed}`}
