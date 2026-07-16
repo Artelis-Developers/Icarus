@@ -20,7 +20,7 @@ const svgBase = {
 export function AgentIcon({ agent, size = 18 }: Props) {
   const dims = { width: size, height: size };
   switch (agent) {
-    case 'hr':
+    case 'order':
       return (
         <svg {...svgBase} {...dims}>
           <circle cx="9" cy="20" r="1" />
@@ -35,12 +35,21 @@ export function AgentIcon({ agent, size = 18 }: Props) {
           <path d="M8 6l-6 6 6 6" />
         </svg>
       );
-    case 'board':
+    case 'req_prio':
       return (
         <svg {...svgBase} {...dims}>
-          <path d="M9 18h6" />
-          <path d="M10 22h4" />
-          <path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1V17h6v-.2c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2z" />
+          <path d="M4 6h16" />
+          <path d="M8 12h12" />
+          <path d="M12 18h8" />
+          <path d="M4 6v12" />
+        </svg>
+      );
+    case 'req_plan':
+      return (
+        <svg {...svgBase} {...dims}>
+          <rect x="3" y="4" width="18" height="18" rx="2" />
+          <path d="M8 10h8" />
+          <path d="M8 14h5" />
         </svg>
       );
     case 'general':

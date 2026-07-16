@@ -4,6 +4,10 @@ const nextConfig = {
     HARNESS_REGION: process.env.HARNESS_REGION || 'eu-north-1',
     HARNESS_ARN: process.env.HARNESS_ARN || '',
     HARNESS_ARN_REQ_DEV: process.env.HARNESS_ARN_REQ_DEV || '',
+    HARNESS_ARN_ORDER: process.env.HARNESS_ARN_ORDER || '',
+    HARNESS_ARN_REQ_PRIO: process.env.HARNESS_ARN_REQ_PRIO || process.env.HARNESS_ARN__REQ_PRIO || '',
+    HARNESS_ARN__REQ_PRIO: process.env.HARNESS_ARN__REQ_PRIO || '',
+    HARNESS_ARN_REQ_PLAN: process.env.HARNESS_ARN_REQ_PLAN || '',
     BEDROCK_MODEL_ID: process.env.BEDROCK_MODEL_ID || 'eu.amazon.nova-pro-v1:0',
   },
   webpack: (config) => {

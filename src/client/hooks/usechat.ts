@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { streamChat, type ChatMessage } from '@/client/lib/stream';
 import { loadJSON, saveJSON } from '@/client/lib/storage';
-import { AGENTS, DEFAULT_AGENT, agentById, type AgentId } from '@/client/lib/agents';
+import { AGENTS, DEFAULT_AGENT, agentById, normalizeAgentId, type AgentId } from '@/client/lib/agents';
 
 const STORAGE_KEY = 'Icarus.v2';
 
@@ -53,9 +53,14 @@ export function useChat() {
   useEffect(() => {
     const s = loadJSON<PersistedState | null>(STORAGE_KEY, null);
     if (s && Array.isArray(s.conversations)) {
-      setConversations(s.conversations);
       setActiveId(s.activeId || 'new');
-      setDraftAgentId((s.draftAgentId as AgentId) || DEFAULT_AGENT);
+      setDraftAgentId(normalizeAgentId(s.draftAgentId || DEFAULT_AGENT));
+      setConversations(
+        s.conversations.map((c) => ({
+          ...c,
+          agentId: normalizeAgentId(c.agentId),
+        }))
+      );
     }
     hydrated.current = true;
   }, []);

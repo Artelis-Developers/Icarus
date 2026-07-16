@@ -12,6 +12,9 @@ const MODEL_ID = process.env.BEDROCK_MODEL_ID || 'eu.amazon.nova-pro-v1:0';
 const HARNESS_BY_AGENT: Record<string, string | undefined> = {
   general: process.env.HARNESS_ARN,
   dev: process.env.HARNESS_ARN_REQ_DEV,
+  order: process.env.HARNESS_ARN_ORDER,
+  req_prio: process.env.HARNESS_ARN_REQ_PRIO || process.env.HARNESS_ARN__REQ_PRIO,
+  req_plan: process.env.HARNESS_ARN_REQ_PLAN,
 };
 
 function getClient() {
