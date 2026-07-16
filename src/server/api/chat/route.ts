@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { BedrockAgentCoreClient, InvokeHarnessCommand } from '@aws-sdk/client-bedrock-agentcore';
+import { fromTemporaryCredentials } from '@aws-sdk/credential-providers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -7,6 +8,11 @@ export const maxDuration = 60;
 
 const REGION = process.env.HARNESS_REGION || 'eu-north-1';
 const MODEL_ID = process.env.BEDROCK_MODEL_ID || 'eu.amazon.nova-pro-v1:0';
+
+// Set only in a cross-account frontend (e.g. prod Amplify in a separate account).
+// When empty, the client uses its own ambient identity — the same-account behaviour.
+const AGENT_INVOKE_ROLE_ARN = process.env.AGENT_INVOKE_ROLE_ARN || '';
+const AGENT_INVOKE_EXTERNAL_ID = process.env.AGENT_INVOKE_EXTERNAL_ID || 'agenticcore-prod';
 
 /** Maps UI agent ids to their harness ARN env vars. */
 const HARNESS_BY_AGENT: Record<string, string | undefined> = {
@@ -18,7 +24,22 @@ const HARNESS_BY_AGENT: Record<string, string | undefined> = {
 };
 
 function getClient() {
-  return new BedrockAgentCoreClient({ region: REGION });
+  // Same account: no role to assume — use the ambient compute-role credentials.
+  if (!AGENT_INVOKE_ROLE_ARN) {
+    return new BedrockAgentCoreClient({ region: REGION });
+  }
+  // Cross account: assume the invoke role in the agent account first, then act as it.
+  return new BedrockAgentCoreClient({
+    region: REGION,
+    credentials: fromTemporaryCredentials({
+      params: {
+        RoleArn: AGENT_INVOKE_ROLE_ARN,
+        RoleSessionName: 'agenticcore-prod-frontend',
+        ExternalId: AGENT_INVOKE_EXTERNAL_ID,
+        DurationSeconds: 3600,
+      },
+    }),
+  });
 }
 
 function resolveHarnessArn(agentId?: string): string {
