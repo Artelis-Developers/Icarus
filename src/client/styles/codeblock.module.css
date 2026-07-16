@@ -1,0 +1,144 @@
+.block {
+  position: relative;
+  margin: 0 0 0.75em;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition), box-shadow var(--transition);
+}
+
+.block:last-child {
+  margin-bottom: 0;
+}
+
+.block:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+
+.copied {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-elevated));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.pre {
+  margin: 0;
+  padding: 12px 14px 12px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  line-height: 1.55;
+  background: transparent;
+  border: 0;
+}
+
+.pre :global(code) {
+  font-family: inherit;
+  font-size: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--text-soft);
+}
+
+.badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 7px;
+  pointer-events: none;
+  transition: color var(--transition), border-color var(--transition), background var(--transition);
+}
+
+.block:hover .badge {
+  color: var(--text-secondary);
+}
+
+.copied .badge {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg));
+}
+
+/* highlight.js token colors — tuned for dark UI */
+.block :global(.hljs-comment),
+.block :global(.hljs-quote) {
+  color: #7d8590;
+  font-style: italic;
+}
+
+.block :global(.hljs-keyword),
+.block :global(.hljs-selector-tag),
+.block :global(.hljs-built_in),
+.block :global(.hljs-name) {
+  color: #ff7b72;
+}
+
+.block :global(.hljs-string),
+.block :global(.hljs-attr),
+.block :global(.hljs-symbol),
+.block :global(.hljs-bullet) {
+  color: #a5d6ff;
+}
+
+.block :global(.hljs-number),
+.block :global(.hljs-literal) {
+  color: #79c0ff;
+}
+
+.block :global(.hljs-title),
+.block :global(.hljs-section),
+.block :global(.hljs-type),
+.block :global(.hljs-class .hljs-title) {
+  color: #d2a8ff;
+}
+
+.block :global(.hljs-variable),
+.block :global(.hljs-template-variable),
+.block :global(.hljs-attribute) {
+  color: #ffa657;
+}
+
+.block :global(.hljs-regexp),
+.block :global(.hljs-link) {
+  color: #7ee787;
+}
+
+.block :global(.hljs-meta),
+.block :global(.hljs-selector-id),
+.block :global(.hljs-selector-class) {
+  color: #8b949e;
+}
+
+.block :global(.hljs-function),
+.block :global(.hljs-title.function_) {
+  color: #d2a8ff;
+}
+
+.block :global(.hljs-params) {
+  color: #e6edf3;
+}
+
+.block :global(.hljs-tag) {
+  color: #7ee787;
+}
+
+.block :global(.hljs-subst) {
+  color: #e6edf3;
+}
+
+.block :global(.hljs-emphasis) {
+  font-style: italic;
+}
+
+.block :global(.hljs-strong) {
+  font-weight: 700;
+}

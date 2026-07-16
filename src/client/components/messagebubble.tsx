@@ -3,10 +3,12 @@
 import { memo, useCallback, useState, type MouseEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
 import type { Components } from 'react-markdown';
 import type { ChatMessage } from '../lib/stream';
 import { agentById, type AgentId } from '../lib/agents';
 import { AgentIcon } from './AgentIcon';
+import { CodeBlock } from './codeblock';
 import styles from '../styles/messagebubble.module.css';
 
 interface Props {
@@ -26,6 +28,7 @@ const markdownComponents: Components = {
       {children}
     </a>
   ),
+  pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
 };
 
 function MessageBubbleBase({ message, agentId }: Props) {
@@ -34,6 +37,7 @@ function MessageBubbleBase({ message, agentId }: Props) {
   const copyRawText = useCallback(async (raw: string, event: MouseEvent<HTMLElement>) => {
     const target = event.target as HTMLElement;
     if (target.closest('a')) return;
+    if (target.closest('[data-code-block]')) return;
 
     const selection = window.getSelection()?.toString().trim();
     if (selection) return;
@@ -83,7 +87,11 @@ function MessageBubbleBase({ message, agentId }: Props) {
             rawContent
           ) : (
             <div className={styles.markdown}>
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                rehypePlugins={[rehypeHighlight]}
+                components={markdownComponents}
+              >
                 {rawContent}
               </ReactMarkdown>
             </div>
