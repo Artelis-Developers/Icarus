@@ -10,7 +10,16 @@ frontend:
 
         - echo "DYNAMODB_USER_POOLS_TABLE=$DYNAMODB_USER_POOLS_TABLE" >> .env.production
         - echo "ALLOWED_ORIGINS=$ALLOWED_ORIGINS" >> .env.production
-        
+        - echo "AGENT_INVOKE_ROLE_ARN=$AGENT_INVOKE_ROLE_ARN" >> .env.production
+        - echo "AGENT_INVOKE_EXTERNAL_ID=$AGENT_INVOKE_EXTERNAL_ID" >> .env.production
+        - echo "HARNESS_REGION=$HARNESS_REGION" >> .env.production
+        - echo "BEDROCK_MODEL_ID=$BEDROCK_MODEL_ID" >> .env.production
+        - echo "HARNESS_ARN=$HARNESS_ARN" >> .env.production
+        - echo "HARNESS_ARN_REQ_DEV=$HARNESS_ARN_REQ_DEV" >> .env.production
+        - echo "HARNESS_ARN_ORDER=$HARNESS_ARN_ORDER" >> .env.production
+        - echo "HARNESS_ARN_REQ_PRIO=$HARNESS_ARN_REQ_PRIO" >> .env.production
+        - echo "HARNESS_ARN_REQ_PLAN=$HARNESS_ARN_REQ_PLAN" >> .env.production
+
         - npm run build
   artifacts:
     baseDirectory: .next

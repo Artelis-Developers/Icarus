@@ -14,13 +14,13 @@ const MODEL_ID = process.env.BEDROCK_MODEL_ID || 'eu.amazon.nova-pro-v1:0';
 const AGENT_INVOKE_ROLE_ARN = process.env.AGENT_INVOKE_ROLE_ARN || '';
 const AGENT_INVOKE_EXTERNAL_ID = process.env.AGENT_INVOKE_EXTERNAL_ID || 'agenticcore-prod';
 
-/** Maps UI agent ids to their harness ARN env vars. */
-const HARNESS_BY_AGENT: Record<string, string | undefined> = {
-  general: process.env.HARNESS_ARN,
-  dev: process.env.HARNESS_ARN_REQ_DEV,
-  order: process.env.HARNESS_ARN_ORDER,
-  req_prio: process.env.HARNESS_ARN_REQ_PRIO || process.env.HARNESS_ARN__REQ_PRIO,
-  req_plan: process.env.HARNESS_ARN_REQ_PLAN,
+/** Env var name per UI agent id — resolved at request time (not module load). */
+const HARNESS_ENV_BY_AGENT: Record<string, string> = {
+  general: 'HARNESS_ARN',
+  dev: 'HARNESS_ARN_REQ_DEV',
+  order: 'HARNESS_ARN_ORDER',
+  req_prio: 'HARNESS_ARN_REQ_PRIO',
+  req_plan: 'HARNESS_ARN_REQ_PLAN',
 };
 
 function getClient() {
@@ -43,12 +43,27 @@ function getClient() {
 }
 
 function resolveHarnessArn(agentId?: string): string {
-  const fallback = process.env.HARNESS_ARN || '';
-  const arn = (agentId && HARNESS_BY_AGENT[agentId]) || fallback;
-  if (!arn) {
-    throw new Error(`No harness configured for agent "${agentId || 'general'}"`);
+  const id = agentId || 'general';
+  const envKey = HARNESS_ENV_BY_AGENT[id];
+
+  // Known agent → must have its own ARN. Never silently fall back to general
+  // (empty string used to be falsy and always routed to HARNESS_ARN).
+  if (envKey) {
+    const arn =
+      process.env[envKey] ||
+      (id === 'req_prio' ? process.env.HARNESS_ARN__REQ_PRIO : undefined) ||
+      '';
+    if (!arn) {
+      throw new Error(`Harness ARN not configured for agent "${id}" (set ${envKey})`);
+    }
+    return arn;
   }
-  return arn;
+
+  const fallback = process.env.HARNESS_ARN || '';
+  if (!fallback) {
+    throw new Error(`No harness configured for agent "${id}"`);
+  }
+  return fallback;
 }
 
 export async function POST(req: NextRequest) {
@@ -66,6 +81,10 @@ export async function POST(req: NextRequest) {
     const msg = err instanceof Error ? err.message : String(err);
     return Response.json({ error: msg }, { status: 400 });
   }
+
+  console.log(
+    `[chat] agentId=${agentId ?? '(none)'} → harness=${harnessArn.split('/').pop()}`
+  );
 
   const harnessMessages = messages.map((m: { role: string; content: string }) => ({
     role: (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',

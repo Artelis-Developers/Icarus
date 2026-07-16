@@ -48,6 +48,8 @@ export function useChat() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const toastSeq = useRef(0);
   const hydrated = useRef(false);
+  const draftAgentIdRef = useRef<AgentId>(draftAgentId);
+  draftAgentIdRef.current = draftAgentId;
 
   /* ── Hydrate from storage once ── */
   useEffect(() => {
@@ -155,7 +157,8 @@ export function useChat() {
       } else {
         convId = uid('conv');
         sessionId = uid('sess');
-        agentId = draftAgentId;
+        // Prefer ref so we never send a stale draft agent after a sidebar click.
+        agentId = draftAgentIdRef.current;
         const conv: Conversation = {
           id: convId,
           sessionId,
