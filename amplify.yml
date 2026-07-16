@@ -3,9 +3,14 @@ frontend:
   phases:
     preBuild:
       commands:
-        - npm ci
+        - aws codeartifact login --tool npm --domain $CODEARTIFACT_DOMAIN --domain-owner $CODEARTIFACT_OWNER --repository $CODEARTIFACT_REPO --region eu-central-1
+        - npm ci 
     build:
       commands:
+
+        - echo "DYNAMODB_USER_POOLS_TABLE=$DYNAMODB_USER_POOLS_TABLE" >> .env.production
+        - echo "ALLOWED_ORIGINS=$ALLOWED_ORIGINS" >> .env.production
+        
         - npm run build
   artifacts:
     baseDirectory: .next
