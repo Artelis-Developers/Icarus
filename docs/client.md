@@ -10,15 +10,18 @@ src/client/
 │   ├── sidebar, topbar, composer, chatinput, chatheader
 │   ├── messagebubble, codeblock, emptystate, typingindicator
 │   ├── agenticon, wiptoast
-│   └── auth-gate.tsx      → portal auth gate (wraps @artelis/auth AuthGuard)
+│   ├── auth-gate.tsx        → portal auth gate (wraps @artelis/auth AuthGuard)
+│   └── portal-user-sync.tsx → refreshes portal `/auth/me` into sessionStorage
 ├── contexts/
-│   └── auth-context.tsx   → wraps @artelis/auth AuthProvider (+ dev bypass); re-exports useAuth
+│   └── auth-context.tsx   → wraps @artelis/auth; enriches useAuth with id-token / `/auth/me` email
 ├── hooks/
 │   └── usechat.ts         → conversation state + streaming orchestration
 ├── lib/
 │   ├── stream.ts          → SSE fetch client (attaches the portal bearer via authHeaders)
 │   ├── agents.ts          → agent roster + starter suggestions
-│   └── storage.ts         → iframe-safe localStorage (in-memory fallback)
+│   ├── storage.ts         → iframe-safe localStorage (in-memory fallback)
+│   ├── portal-user-profile.ts → fetch/cache portal `GET /auth/me` (real email for SSO)
+│   └── display-identity.ts    → id-token email decode + name-from-email helpers
 ├── pages/
 │   └── chatpage.tsx       → main page composition (consumes useChat)
 └── styles/
@@ -48,6 +51,10 @@ CSS Modules. Icarus keeps its **own** token set (green accent) — it does **not
 - `contexts/auth-context.tsx` wraps `@artelis/auth`'s `AuthProvider`, mounted in `app/layout.tsx`.
   Standalone dev (not in an iframe) bypasses to a demo identity; the portal iframe runs the
   postMessage handshake.
+- Cognito **access** tokens often omit email for SSO users. Icarus enriches `useAuth().user`
+  the same way Requests does: prefer id-token `email`, else portal `GET /auth/me` (cached by
+  `PortalUserSync` → `portal-user-profile.ts`), then derive `name` from the email local part
+  (`igor.winandy@…` → "Igor Winandy"). Sidebar footer shows that name/email.
 - `components/auth-gate.tsx` gates the page via `@artelis/auth`'s `AuthGuard`, with
   loading / access-denied / not-signed-in screens styled in Icarus's own tokens (so no
   `@artelis/theme` dependency).

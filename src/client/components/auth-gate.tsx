@@ -1,7 +1,8 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { AuthGuard, useAuth } from '@artelis/auth';
+import { AuthGuard } from '@artelis/auth';
+import { useAuth } from '../contexts/auth-context';
 import styles from '../styles/auth-gate.module.css';
 
 function Screen({ children }: { children: ReactNode }) {

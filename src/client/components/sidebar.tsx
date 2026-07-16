@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import type { Agent, AgentId } from '../lib/agents';
 import type { Conversation } from '../hooks/usechat';
+import { useAuth } from '../contexts/auth-context';
 import { agentById } from '../lib/agents';
 import { AgentIcon } from './AgentIcon';
 import styles from '../styles/sidebar.module.css';
@@ -30,6 +31,10 @@ export function Sidebar({
   onOpenConversation,
   onWip,
 }: Props) {
+  const { user } = useAuth();
+  const displayName = user?.name?.trim() || 'Signed in';
+  const displayEmail = user?.email?.trim() || 'Artelis Group';
+
   return (
     <aside className={`${styles.aside} ${collapsed ? styles.collapsed : ''}`}>
       {/* Brand */}
@@ -100,17 +105,16 @@ export function Sidebar({
         })}
       </div>
 
-      {/* User footer (neutral placeholder — real identity injected later) */}
       <div className={styles.footer}>
-        <div className={styles.avatar}>
+        <div className={styles.avatar} title={displayEmail}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="8" r="4" />
             <path d="M4 21v-1a6 6 0 0 1 16 0v1" />
           </svg>
         </div>
         <div className={`${styles.footerText} ${styles.hideCollapsed}`}>
-          <div className={styles.footerName}>Signed in</div>
-          <div className={styles.footerSub}>Artelis Group</div>
+          <div className={styles.footerName}>{displayName}</div>
+          <div className={styles.footerSub}>{displayEmail}</div>
         </div>
         <button
           className={`${styles.gear} ${styles.hideCollapsed}`}
