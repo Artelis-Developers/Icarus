@@ -26,6 +26,17 @@ export function readCachedPortalMeUser(): PortalMeUser | null {
   }
 }
 
+/** Persist a portal profile (e.g. email from `ms-auth` postMessage). */
+export function cachePortalMeUser(user: PortalMeUser): void {
+  if (typeof window === 'undefined') return;
+  if (!user.id || !user.email?.trim()) return;
+  try {
+    sessionStorage.setItem(PORTAL_ME_USER_STORAGE_KEY, JSON.stringify(user));
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
 /**
  * Fetch the portal session profile (`GET /auth/me`). Same source as the portal UI — includes
  * `email` for SSO-federated users. Requires the portal to allow credentialed CORS from this origin.
