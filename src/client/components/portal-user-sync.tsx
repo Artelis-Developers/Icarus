@@ -26,6 +26,13 @@ export function PortalUserSync({ onSynced }: { onSynced?: () => void }) {
       if (!message || typeof message !== 'object') return;
       if (message.type !== 'ms-auth' || message.success === false) return;
 
+      console.log('[Icarus auth] raw ms-auth keys:', Object.keys(message), {
+        hasAccessToken: !!message.access_token,
+        hasIdToken: !!message.id_token,
+        email: message.email ?? null,
+        user_id: message.user_id ?? null,
+      });
+
       const email =
         (typeof message.email === 'string' && message.email.trim()) ||
         (typeof message.id_token === 'string'
