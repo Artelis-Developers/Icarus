@@ -209,18 +209,23 @@ export function useChat() {
         agentId,
         (chunk) => {
           assistantText += chunk;
-          applyAssistant(assistantText);
+          applyAssistant(assistantText, false);
         },
         (errorMsg) => {
-          const combined = assistantText
-            ? `${assistantText}\n\n⚠️ ${errorMsg}`
-            : errorMsg;
-          applyAssistant(combined, true);
+          // Only use error styling when there is no successful reply; otherwise keep
+          // markdown rendering (same as /api/chat agents) and append a note.
+          if (assistantText) {
+            applyAssistant(`${assistantText}\n\n_${errorMsg}_`, false);
+          } else {
+            applyAssistant(errorMsg, true);
+          }
         },
-        () => {},
+        () => {
+          // Ensure final bubble stays in normal markdown mode after stream completes.
+          if (assistantText) applyAssistant(assistantText, false);
+        },
         (statusMsg) => {
-          // Soft progress line while tools run (replaced by real text/errors).
-          if (!assistantText) applyAssistant(`_${statusMsg}_`);
+          if (!assistantText) applyAssistant(`_${statusMsg}_`, false);
         }
       );
 

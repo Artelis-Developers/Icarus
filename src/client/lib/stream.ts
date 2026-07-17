@@ -247,7 +247,7 @@ async function readSseStream(
 
 /**
  * InvokeHarness HTTPS returns AWS event-stream (binary framing + embedded JSON).
- * Extract delta text with a regex so binary prelude braces cannot break parsing.
+ * Decode as UTF-8 so agent text (dashes, accents) is correct; scan for delta.text.
  */
 async function readAwsEventStream(
   body: ReadableStream<Uint8Array>,
@@ -257,18 +257,32 @@ async function readAwsEventStream(
   onStatus?: (msg: string) => void
 ): Promise<void> {
   const reader = body.getReader();
+  const decoder = new TextDecoder('utf-8');
   let buffer = '';
   let gotText = false;
 
+  /** Bytes misread as latin1 → proper UTF-8 (fallback if a chunk was already mojibake). */
+  const asUtf8 = (s: string): string => {
+    if (!/[\u0080-\u00ff]/.test(s)) return s;
+    try {
+      const bytes = new Uint8Array(s.length);
+      for (let i = 0; i < s.length; i++) bytes[i] = s.charCodeAt(i) & 0xff;
+      return new TextDecoder('utf-8').decode(bytes);
+    } catch {
+      return s;
+    }
+  };
+
   const emitDeltaTexts = () => {
-    // {"contentBlockIndex":0,"delta":{"text":"Hello"}}  (and nested variants)
     const deltaRe = /"delta"\s*:\s*\{\s*"text"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
     let match: RegExpExecArray | null;
     let consumed = 0;
 
     while ((match = deltaRe.exec(buffer)) !== null) {
       try {
-        const text = JSON.parse(`"${match[1]}"`) as string;
+        // Same decoding as JSON.stringify/parse on /api/chat SSE text events
+        let text = JSON.parse(`"${match[1]}"`) as string;
+        text = asUtf8(text).replace(/\r\n/g, '\n');
         if (text) {
           if (!gotText) console.info('[chat] first contentBlockDelta text received');
           gotText = true;
@@ -280,16 +294,17 @@ async function readAwsEventStream(
       consumed = match.index + match[0].length;
     }
 
-    const errRe =
-      /"message"\s*:\s*"((?:[^"\\]|\\.)*)"[^}]{0,80}"(?:runtimeClientError|internalServerException|validationException)"|"runtimeClientError"\s*:\s*\{[^}]*?"message"\s*:\s*"((?:[^"\\]|\\.)*)"/;
-    const errMatch = errRe.exec(buffer);
-    if (errMatch) {
-      const msg = errMatch[2] || errMatch[1];
-      if (msg) {
+    // Only real harness failures — do not treat other "message" fields as errors
+    // (that would flip the bubble to error styling and skip markdown).
+    if (!gotText) {
+      const errRe =
+        /"runtimeClientError"\s*:\s*\{[^}]*?"message"\s*:\s*"((?:[^"\\]|\\.)*)"/;
+      const errMatch = errRe.exec(buffer);
+      if (errMatch?.[1]) {
         try {
-          onError(JSON.parse(`"${msg}"`) as string);
+          onError(asUtf8(JSON.parse(`"${errMatch[1]}"`) as string));
         } catch {
-          onError(msg);
+          onError(asUtf8(errMatch[1]));
         }
       }
     }
@@ -304,7 +319,6 @@ async function readAwsEventStream(
       }
     }
 
-    // Retain only a possible incomplete trailing `"delta":{"text":"...`
     const lastDelta = buffer.lastIndexOf('"delta"');
     if (lastDelta >= consumed) {
       buffer = buffer.slice(lastDelta);
@@ -319,13 +333,11 @@ async function readAwsEventStream(
     const { done, value } = await reader.read();
     if (done) break;
     if (!value?.length) continue;
-
-    for (let i = 0; i < value.length; i++) {
-      buffer += String.fromCharCode(value[i]!);
-    }
+    buffer += decoder.decode(value, { stream: true });
     emitDeltaTexts();
   }
 
+  buffer += decoder.decode();
   emitDeltaTexts();
 
   if (!gotText) {
