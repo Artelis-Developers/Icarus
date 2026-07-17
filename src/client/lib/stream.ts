@@ -192,6 +192,99 @@ function handleSseDataLine(
   return 'continue';
 }
 
+/**
+ * Pull complete JSON objects from a mixed buffer (AWS event-stream embeds JSON
+ * between binary headers). Returns parsed objects + unconsumed tail.
+ */
+function pullJsonObjects(buffer: string): { objects: unknown[]; rest: string } {
+  const objects: unknown[] = [];
+  let i = 0;
+
+  while (i < buffer.length) {
+    if (buffer[i] !== '{') {
+      i++;
+      continue;
+    }
+
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    const start = i;
+    let end = -1;
+
+    for (let j = i; j < buffer.length; j++) {
+      const c = buffer[j];
+      if (inString) {
+        if (escape) escape = false;
+        else if (c === '\\') escape = true;
+        else if (c === '"') inString = false;
+        continue;
+      }
+      if (c === '"') inString = true;
+      else if (c === '{') depth++;
+      else if (c === '}') {
+        depth--;
+        if (depth === 0) {
+          end = j;
+          break;
+        }
+      }
+    }
+
+    if (end < 0) {
+      return { objects, rest: buffer.slice(start) };
+    }
+
+    const slice = buffer.slice(start, end + 1);
+    try {
+      objects.push(JSON.parse(slice));
+    } catch {
+      /* skip malformed */
+    }
+    i = end + 1;
+  }
+
+  return { objects, rest: '' };
+}
+
+function handleHarnessStreamEvent(
+  evt: unknown,
+  onText: (chunk: string) => void,
+  onError: (msg: string) => void,
+  onStatus?: (msg: string) => void
+): void {
+  if (!evt || typeof evt !== 'object') return;
+  const obj = evt as Record<string, unknown>;
+
+  const streamErr =
+    (obj.runtimeClientError as { message?: string } | undefined)?.message ||
+    (obj.internalServerException as { message?: string } | undefined)?.message ||
+    (obj.validationException as { message?: string } | undefined)?.message;
+  if (streamErr) {
+    onError(streamErr);
+    return;
+  }
+
+  const delta = (obj.contentBlockDelta as { delta?: { text?: string; toolUse?: unknown } } | undefined)
+    ?.delta;
+  if (delta?.text) {
+    onText(delta.text);
+    return;
+  }
+
+  const toolName = (
+    obj.contentBlockStart as { start?: { toolUse?: { name?: string } } } | undefined
+  )?.start?.toolUse?.name;
+  if (toolName) {
+    onStatus?.(`Using tool: ${toolName}`);
+  }
+
+  // Also accept our legacy SSE-shaped events if present
+  if (obj.type === 'text' && typeof obj.text === 'string') onText(obj.text);
+  if (obj.type === 'error' && typeof obj.message === 'string') onError(obj.message);
+}
+
+/** Amplify /api/chat SSE (`data: {...}`). */
 async function readSseStream(
   body: ReadableStream<Uint8Array>,
   onText: (chunk: string) => void,
@@ -224,7 +317,6 @@ async function readSseStream(
         continue;
       }
 
-      // Some runtimes emit raw JSON lines without the `data:` prefix
       if (trimmed.startsWith('{') || trimmed.startsWith('"')) {
         const text = extractTextFromPayload(trimmed);
         if (text) onText(text);
@@ -239,6 +331,43 @@ async function readSseStream(
     } else {
       const text = extractTextFromPayload(leftover);
       if (text) onText(text);
+    }
+  }
+
+  onDone();
+}
+
+/**
+ * InvokeHarness HTTPS returns AWS event-stream (binary framing + embedded JSON),
+ * not `text/event-stream`. Decode text and extract contentBlockDelta JSON payloads.
+ */
+async function readAwsEventStream(
+  body: ReadableStream<Uint8Array>,
+  onText: (chunk: string) => void,
+  onError: (msg: string) => void,
+  onDone: () => void,
+  onStatus?: (msg: string) => void
+): Promise<void> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const { objects, rest } = pullJsonObjects(buffer);
+    buffer = rest;
+    for (const evt of objects) {
+      handleHarnessStreamEvent(evt, onText, onError, onStatus);
+    }
+  }
+
+  if (buffer) {
+    const { objects } = pullJsonObjects(buffer);
+    for (const evt of objects) {
+      handleHarnessStreamEvent(evt, onText, onError, onStatus);
     }
   }
 
@@ -308,7 +437,13 @@ async function streamViaAgentcoreJwt(
     return;
   }
 
-  await readSseStream(response.body, onText, onError, onDone, onStatus);
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('text/event-stream')) {
+    await readSseStream(response.body, onText, onError, onDone, onStatus);
+  } else {
+    // Typical InvokeHarness Bearer response: application/vnd.amazon.eventstream
+    await readAwsEventStream(response.body, onText, onError, onDone, onStatus);
+  }
 }
 
 async function streamViaApiChat(

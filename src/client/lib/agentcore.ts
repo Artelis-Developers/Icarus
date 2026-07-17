@@ -27,7 +27,8 @@ export function agentcoreRegion(): string {
 }
 
 export function agentcoreQualifier(): string {
-  return process.env.NEXT_PUBLIC_AGENTCORE_QUALIFIER?.trim() || 'DEFAULT';
+  // Only send qualifier when explicitly configured. "DEFAULT" is not always created.
+  return process.env.NEXT_PUBLIC_AGENTCORE_QUALIFIER?.trim() || '';
 }
 
 export function isJwtInvokeAgent(agentId: string): boolean {
@@ -54,15 +55,15 @@ export function useAgentcoreJwtInvoke(agentId: string): boolean {
 }
 
 /**
- * POST https://bedrock-agentcore.{region}.amazonaws.com/harnesses/invoke?harnessArn=…&qualifier=…
+ * POST https://bedrock-agentcore.{region}.amazonaws.com/harnesses/invoke?harnessArn=…
+ * Optional `qualifier` = harness endpoint name (only if NEXT_PUBLIC_AGENTCORE_QUALIFIER is set).
  * @see https://docs.aws.amazon.com/bedrock-agentcore/latest/APIReference/API_InvokeHarness.html
  */
 export function buildHarnessInvokeUrl(harnessArn: string): string {
   const region = agentcoreRegion();
-  const params = new URLSearchParams({
-    harnessArn,
-    qualifier: agentcoreQualifier(),
-  });
+  const params = new URLSearchParams({ harnessArn });
+  const qualifier = agentcoreQualifier();
+  if (qualifier) params.set('qualifier', qualifier);
   return `https://bedrock-agentcore.${region}.amazonaws.com/harnesses/invoke?${params.toString()}`;
 }
 
