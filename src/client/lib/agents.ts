@@ -1,9 +1,10 @@
 /**
  * Agent catalogue for Icarus.
  *
- * Agents with wired: true call /api/chat; the server routes each id to its
- * harness ARN via env vars (see src/server/api/chat/route.ts). Unwired agents
- * show a "coming soon" toast when selected.
+ * Most wired agents use Amplify `/api/chat` (IAM InvokeHarness).
+ * `general` and `order` use browser → AgentCore HTTPS with Cognito JWT when
+ * `NEXT_PUBLIC_HARNESS_ARN` / `NEXT_PUBLIC_HARNESS_ARN_ORDER` are set
+ * (see src/client/lib/agentcore.ts). Unwired agents show a "coming soon" toast.
  */
 
 export type AgentId = 'general' | 'dev' | 'order' | 'req_prio' | 'req_plan';

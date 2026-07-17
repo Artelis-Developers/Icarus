@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { streamChat, type ChatMessage } from '@/client/lib/stream';
 import { loadJSON, saveJSON } from '@/client/lib/storage';
 import { AGENTS, DEFAULT_AGENT, agentById, normalizeAgentId, type AgentId } from '@/client/lib/agents';
+import { ensureRuntimeSessionId } from '@/client/lib/agentcore';
 
 const STORAGE_KEY = 'Icarus.v2';
 
@@ -141,13 +142,14 @@ export function useChat() {
       const existing = conversations.find((c) => c.id === activeId);
       if (existing) {
         convId = existing.id;
-        sessionId = existing.sessionId;
+        sessionId = ensureRuntimeSessionId(existing.sessionId);
         agentId = existing.agentId;
         setConversations((prev) =>
           prev.map((c) =>
             c.id === convId
               ? {
                   ...c,
+                  sessionId,
                   title: c.messages.length === 0 ? text.slice(0, 46) : c.title,
                   messages: [...c.messages, { role: 'user', content: text }],
                 }
@@ -156,7 +158,7 @@ export function useChat() {
         );
       } else {
         convId = uid('conv');
-        sessionId = uid('sess');
+        sessionId = ensureRuntimeSessionId(uid('sess'));
         // Prefer ref so we never send a stale draft agent after a sidebar click.
         agentId = draftAgentIdRef.current;
         const conv: Conversation = {

@@ -17,7 +17,8 @@ src/client/
 ├── hooks/
 │   └── usechat.ts         → conversation state + streaming orchestration
 ├── lib/
-│   ├── stream.ts          → SSE fetch client (attaches the portal bearer via authHeaders)
+│   ├── stream.ts          → chat invoke: AgentCore JWT HTTPS (prod) or /api/chat fallback
+│   ├── agentcore.ts       → runtime ARN map, invocation URL, session id length
 │   ├── agents.ts          → agent roster + starter suggestions
 │   ├── storage.ts         → iframe-safe localStorage (in-memory fallback)
 │   ├── portal-user-profile.ts → fetch/cache portal `GET /auth/me` (real email for SSO)
@@ -59,11 +60,12 @@ CSS Modules. Icarus keeps its **own** token set (green accent) — it does **not
 - `components/auth-gate.tsx` gates the page via `@artelis/auth`'s `AuthGuard`, with
   loading / access-denied / not-signed-in screens styled in Icarus's own tokens (so no
   `@artelis/theme` dependency).
-- `lib/stream.ts` attaches the portal bearer via a 3-tier `resolveAccessToken`
-  (`getJWTToken` → `getAccessToken` → `sessionStorage['portal_tokens']`) so the
-  `withAuth`-protected `/api/chat` accepts the request. Tier 3 (sessionStorage) is what makes
-  it work inside the portal iframe, where the in-memory auth singleton is often unreachable —
-  the package's `authHeaders()` helper is singleton-only and 401s there.
+- `lib/stream.ts` attaches the portal Cognito access token via a 3-tier `resolveAccessToken`
+  (`getJWTToken` → `getAccessToken` → `sessionStorage['portal_tokens']`). For agents
+  `general` and `order` only, when `NEXT_PUBLIC_HARNESS_ARN` / `NEXT_PUBLIC_HARNESS_ARN_ORDER`
+  are set, it POSTs to AgentCore `/runtimes/{arn}/invocations` with Bearer + session header
+  (`lib/agentcore.ts`). All other agents keep Amplify `/api/chat`. Tier 3 (sessionStorage) is
+  what makes the token available inside the portal iframe.
 
 ## Component rules
 
@@ -73,6 +75,6 @@ CSS Modules. Icarus keeps its **own** token set (green accent) — it does **not
 
 ## Can I touch it?
 
-- **Yes** for visuals, layout, animations, new components.
-- **No** for harness-call changes — that's `src/server/`. The auth context/gate mirror the fleet
-  convention; change them in step with `@artelis/auth`, not ad hoc.
+- **Yes** for visuals, layout, animations, new components, and the browser AgentCore JWT invoke path (`stream.ts` / `agentcore.ts`).
+- **Server `/api/chat`** remains the IAM fallback — change harness invoke there carefully; keep `withAuth`.
+- Auth context/gate mirror the fleet convention; change them in step with `@artelis/auth`, not ad hoc.

@@ -19,6 +19,11 @@ frontend:
         - echo "HARNESS_ARN_ORDER=$HARNESS_ARN_ORDER" >> .env.production
         - echo "HARNESS_ARN_REQ_PRIO=$HARNESS_ARN_REQ_PRIO" >> .env.production
         - echo "HARNESS_ARN_REQ_PLAN=$HARNESS_ARN_REQ_PLAN" >> .env.production
+        # JWT HTTPS invoke — only general + order (browser → AgentCore). Others stay on /api/chat.
+        - echo "NEXT_PUBLIC_AGENTCORE_REGION=$NEXT_PUBLIC_AGENTCORE_REGION" >> .env.production
+        - echo "NEXT_PUBLIC_AGENTCORE_QUALIFIER=$NEXT_PUBLIC_AGENTCORE_QUALIFIER" >> .env.production
+        - echo "NEXT_PUBLIC_HARNESS_ARN=$NEXT_PUBLIC_HARNESS_ARN" >> .env.production
+        - echo "NEXT_PUBLIC_HARNESS_ARN_ORDER=$NEXT_PUBLIC_HARNESS_ARN_ORDER" >> .env.production
 
         - npm run build
   artifacts:

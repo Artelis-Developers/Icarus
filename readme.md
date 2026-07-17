@@ -44,9 +44,10 @@ import { ChatHeader } from '@/client/components/ChatHeader';
 1. **`src/server/` is backend.** UI code never imports from here.
 2. **`src/client/` is frontend.** No AWS SDK imports in this tree.
 3. **`app/` is glue only.** Thin re-exports + root providers/metadata, no domain logic.
-4. **Auth is `@artelis/auth`.** `/api/chat` is wrapped in `withAuth`; the client attaches the
-   portal bearer. Don't roll custom auth. Icarus keeps its **own** dark/green tokens — it does
-   **not** use `@artelis/theme`.
+4. **Auth is `@artelis/auth`.** The portal Cognito access token is attached as
+   `Authorization: Bearer` for chat. For `general` / `order` (when `NEXT_PUBLIC_HARNESS_ARN*`
+   is set), the browser calls AgentCore HTTPS directly; other agents use `/api/chat`. Icarus keeps
+   its **own** dark/green tokens — it does **not** use `@artelis/theme`.
 
 ## Setup
 
@@ -60,7 +61,19 @@ npm run dev
 Set on the Amplify app (both app-level and branch-level); `amplify.yml` writes them into
 `.env.production` at build time. Full reference: [`docs/server.md`](docs/server.md).
 
-**Harness / model** (multi-agent — one ARN per agent):
+**AgentCore JWT invoke (only `general` + `order`):**
+
+| Key | Example |
+|---|---|
+| `NEXT_PUBLIC_AGENTCORE_REGION` | `eu-north-1` |
+| `NEXT_PUBLIC_AGENTCORE_QUALIFIER` | `DEFAULT` |
+| `NEXT_PUBLIC_HARNESS_ARN` | JWT-enabled **runtime** ARN for General Assistant |
+| `NEXT_PUBLIC_HARNESS_ARN_ORDER` | JWT-enabled **runtime** ARN for Order Agent |
+
+Other agents always use `/api/chat`. Until the two `NEXT_PUBLIC_HARNESS_ARN*` vars are set,
+`general` / `order` also fall back to `/api/chat`.
+
+**Harness / model** (Amplify SSR `/api/chat` — IAM `InvokeHarness`, used by `dev` / `req_prio` / `req_plan` and as fallback):
 
 | Key | Example |
 |---|---|
