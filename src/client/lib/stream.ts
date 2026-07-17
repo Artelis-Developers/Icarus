@@ -355,12 +355,23 @@ export async function streamChat(
   if (useAgentcoreJwtInvoke(agentId)) {
     const arn = resolveJwtInvokeArn(agentId);
     const url = arn ? buildInvocationUrl(arn) : '(missing ARN)';
+    let tokenIss: string | undefined;
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]!.replace(/-/g, '+').replace(/_/g, '/')));
+        tokenIss = typeof payload.iss === 'string' ? payload.iss : undefined;
+      } catch {
+        /* ignore */
+      }
+    }
     console.info('[chat] path=AgentCore JWT HTTPS', {
       agentId,
       url,
       runtimeArn: arn,
       sessionId: ensureRuntimeSessionId(sessionId),
       hasToken: Boolean(token),
+      tokenIss,
+      hint: 'tokenIss must match the runtime customJWTAuthorizer discovery URL issuer',
     });
     if (!token) {
       onError('Not signed in — Cognito access token required to invoke the agent');
