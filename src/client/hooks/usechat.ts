@@ -203,15 +203,29 @@ export function useChat() {
         );
       };
 
+      // Coalesce stream chunks to one React update per animation frame (JWT sends many tiny deltas).
+      let rafId = 0;
+      const scheduleAssistant = () => {
+        if (rafId) return;
+        rafId = requestAnimationFrame(() => {
+          rafId = 0;
+          applyAssistant(assistantText, false);
+        });
+      };
+
       await streamChat(
         history,
         sessionId,
         agentId,
         (chunk) => {
           assistantText += chunk;
-          applyAssistant(assistantText, false);
+          scheduleAssistant();
         },
         (errorMsg) => {
+          if (rafId) {
+            cancelAnimationFrame(rafId);
+            rafId = 0;
+          }
           // Only use error styling when there is no successful reply; otherwise keep
           // markdown rendering (same as /api/chat agents) and append a note.
           if (assistantText) {
@@ -221,6 +235,10 @@ export function useChat() {
           }
         },
         () => {
+          if (rafId) {
+            cancelAnimationFrame(rafId);
+            rafId = 0;
+          }
           // Ensure final bubble stays in normal markdown mode after stream completes.
           if (assistantText) applyAssistant(assistantText, false);
         },

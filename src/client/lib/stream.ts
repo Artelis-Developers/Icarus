@@ -372,20 +372,31 @@ async function streamViaAgentcoreJwt(
     return;
   }
 
-  const harnessMessages = messages
-    .filter((m) => !m.isError && m.content.trim())
-    .map((m) => ({
-      role: (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
-      content: [{ text: m.content }],
-    }));
-
-  if (harnessMessages.length === 0) {
+  // Session stickiness already keeps conversation state in the harness microVM.
+  // Resending full history every turn inflates input tokens and makes JWT feel slow.
+  const lastUser = [...messages].reverse().find((m) => m.role === 'user' && !m.isError && m.content.trim());
+  if (!lastUser) {
     onError('No user message to send');
     return;
   }
+  const harnessMessages = [
+    {
+      role: 'user' as const,
+      content: [{ text: lastUser.content }],
+    },
+  ];
 
   const url = buildHarnessInvokeUrl(harnessArn);
   const runtimeSessionId = ensureRuntimeSessionId(sessionId);
+
+  if (typeof console !== 'undefined') {
+    console.info('[AgentCore JWT] invoke', {
+      agentId,
+      sessionChars: runtimeSessionId.length,
+      promptChars: lastUser.content.length,
+      historySkipped: messages.length - 1,
+    });
+  }
 
   let response: Response;
   try {
