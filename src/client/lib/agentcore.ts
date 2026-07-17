@@ -1,8 +1,13 @@
 /**
- * AgentCore JWT invoke (browser → HTTPS) — only for selected agents.
+ * AgentCore harness JWT invoke (browser → HTTPS) — only for selected agents.
  *
- * - `general` + `order`: Cognito Bearer → bedrock-agentcore …/runtimes/{arn}/invocations
- * - all other agents: unchanged Amplify `/api/chat` (IAM InvokeHarness)
+ * Harness-managed agents cannot use /runtimes/.../invocations. Use InvokeHarness:
+ *   POST /harnesses/invoke?harnessArn=...  + Authorization: Bearer <Cognito JWT>
+ *
+ * - `general` + `order`: JWT → InvokeHarness
+ * - all other agents: Amplify `/api/chat` (IAM InvokeHarness)
+ *
+ * NEXT_PUBLIC_HARNESS_ARN* must be **harness** ARNs (`…:harness/…`), not runtime ARNs.
  *
  * IMPORTANT: Next.js only inlines `process.env.NEXT_PUBLIC_*` with static property
  * access. Never use process.env[dynamicKey] — it is always undefined in the browser.
@@ -29,7 +34,7 @@ export function isJwtInvokeAgent(agentId: string): boolean {
   return JWT_INVOKE_AGENTS.has((agentId || 'general') as AgentId);
 }
 
-/** ARN for JWT invoke, or empty if this agent is not on the JWT path / not configured. */
+/** Harness ARN for JWT InvokeHarness, or empty if not on the JWT path / not configured. */
 export function resolveJwtInvokeArn(agentId: string): string {
   const id = (agentId || 'general') as AgentId;
   if (!JWT_INVOKE_AGENTS.has(id)) return '';
@@ -49,13 +54,16 @@ export function useAgentcoreJwtInvoke(agentId: string): boolean {
 }
 
 /**
- * POST https://bedrock-agentcore.{region}.amazonaws.com/runtimes/{encodedArn}/invocations?qualifier=…
+ * POST https://bedrock-agentcore.{region}.amazonaws.com/harnesses/invoke?harnessArn=…&qualifier=…
+ * @see https://docs.aws.amazon.com/bedrock-agentcore/latest/APIReference/API_InvokeHarness.html
  */
-export function buildInvocationUrl(runtimeArn: string): string {
+export function buildHarnessInvokeUrl(harnessArn: string): string {
   const region = agentcoreRegion();
-  const qualifier = encodeURIComponent(agentcoreQualifier());
-  const encodedArn = encodeURIComponent(runtimeArn);
-  return `https://bedrock-agentcore.${region}.amazonaws.com/runtimes/${encodedArn}/invocations?qualifier=${qualifier}`;
+  const params = new URLSearchParams({
+    harnessArn,
+    qualifier: agentcoreQualifier(),
+  });
+  return `https://bedrock-agentcore.${region}.amazonaws.com/harnesses/invoke?${params.toString()}`;
 }
 
 /** AgentCore requires session ids between 33 and 256 characters. */

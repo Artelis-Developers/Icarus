@@ -19,14 +19,13 @@ frontend:
         - echo "HARNESS_ARN_ORDER=$HARNESS_ARN_ORDER" >> .env.production
         - echo "HARNESS_ARN_REQ_PRIO=$HARNESS_ARN_REQ_PRIO" >> .env.production
         - echo "HARNESS_ARN_REQ_PLAN=$HARNESS_ARN_REQ_PLAN" >> .env.production
-        # JWT HTTPS (general + order). Prefer Amplify Console NEXT_PUBLIC_*; fall back to known runtime ARNs
-        # so an empty echo never clobbers the client bundle (Amplify shell sometimes lacks NEXT_PUBLIC_*).
+        # JWT InvokeHarness (general + order). Harness ARNs (…:harness/…), not runtime ARNs.
         - |
           REGION="${NEXT_PUBLIC_AGENTCORE_REGION:-${HARNESS_REGION:-eu-north-1}}"
           echo "NEXT_PUBLIC_AGENTCORE_REGION=$REGION" >> .env.production
           echo "NEXT_PUBLIC_AGENTCORE_QUALIFIER=${NEXT_PUBLIC_AGENTCORE_QUALIFIER:-DEFAULT}" >> .env.production
-          GENERAL_ARN="${NEXT_PUBLIC_HARNESS_ARN:-arn:aws:bedrock-agentcore:eu-north-1:145928770924:runtime/harness_harness_cegecom_general-opDo2y9ttr}"
-          ORDER_ARN="${NEXT_PUBLIC_HARNESS_ARN_ORDER:-arn:aws:bedrock-agentcore:eu-north-1:145928770924:runtime/harness_order-GbhPA34Eix}"
+          GENERAL_ARN="${NEXT_PUBLIC_HARNESS_ARN:-${HARNESS_ARN}}"
+          ORDER_ARN="${NEXT_PUBLIC_HARNESS_ARN_ORDER:-${HARNESS_ARN_ORDER}}"
           echo "NEXT_PUBLIC_HARNESS_ARN=$GENERAL_ARN" >> .env.production
           echo "NEXT_PUBLIC_HARNESS_ARN_ORDER=$ORDER_ARN" >> .env.production
           echo "JWT build: GENERAL_ARN len=${#GENERAL_ARN} ORDER_ARN len=${#ORDER_ARN}"

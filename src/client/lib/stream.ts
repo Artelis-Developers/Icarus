@@ -9,7 +9,7 @@
 
 import { getPortalAuth, STORAGE_KEYS } from '@artelis/auth';
 import {
-  buildInvocationUrl,
+  buildHarnessInvokeUrl,
   ensureRuntimeSessionId,
   isJwtInvokeAgent,
   resolveJwtInvokeArn,
@@ -103,15 +103,6 @@ async function formatHttpError(response: Response): Promise<string> {
   }
 
   return `${status}: Failed to connect to agent (empty response)`;
-}
-
-function lastUserPrompt(messages: ChatMessage[]): string {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].role === 'user' && messages[i].content.trim()) {
-      return messages[i].content;
-    }
-  }
-  return '';
 }
 
 /** Pull assistant text out of heterogeneous AgentCore / SSE JSON payloads. */
@@ -264,21 +255,34 @@ async function streamViaAgentcoreJwt(
   onDone: () => void,
   onStatus?: (msg: string) => void
 ): Promise<void> {
-  const runtimeArn = resolveJwtInvokeArn(agentId);
-  if (!runtimeArn) {
+  const harnessArn = resolveJwtInvokeArn(agentId);
+  if (!harnessArn) {
     onError(
       `JWT invoke ARN not configured for agent "${agentId}" (set NEXT_PUBLIC_HARNESS_ARN or NEXT_PUBLIC_HARNESS_ARN_ORDER)`
     );
     return;
   }
 
-  const prompt = lastUserPrompt(messages);
-  if (!prompt) {
+  if (!harnessArn.includes(':harness/')) {
+    onError(
+      `Expected a harness ARN (…:harness/…), got runtime ARN. Use HARNESS_ARN values for NEXT_PUBLIC_HARNESS_ARN*, not runtime/…`
+    );
+    return;
+  }
+
+  const harnessMessages = messages
+    .filter((m) => !m.isError && m.content.trim())
+    .map((m) => ({
+      role: (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
+      content: [{ text: m.content }],
+    }));
+
+  if (harnessMessages.length === 0) {
     onError('No user message to send');
     return;
   }
 
-  const url = buildInvocationUrl(runtimeArn);
+  const url = buildHarnessInvokeUrl(harnessArn);
   const runtimeSessionId = ensureRuntimeSessionId(sessionId);
 
   let response: Response;
@@ -291,7 +295,7 @@ async function streamViaAgentcoreJwt(
         Accept: 'text/event-stream',
         'X-Amzn-Bedrock-AgentCore-Runtime-Session-Id': runtimeSessionId,
       },
-      body: JSON.stringify({ prompt }),
+      body: JSON.stringify({ messages: harnessMessages }),
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -354,7 +358,7 @@ export async function streamChat(
 
   if (useAgentcoreJwtInvoke(agentId)) {
     const arn = resolveJwtInvokeArn(agentId);
-    const url = arn ? buildInvocationUrl(arn) : '(missing ARN)';
+    const url = arn ? buildHarnessInvokeUrl(arn) : '(missing ARN)';
     let tokenIss: string | undefined;
     if (token) {
       try {
@@ -364,14 +368,13 @@ export async function streamChat(
         /* ignore */
       }
     }
-    console.info('[chat] path=AgentCore JWT HTTPS', {
+    console.info('[chat] path=AgentCore JWT InvokeHarness', {
       agentId,
       url,
-      runtimeArn: arn,
+      harnessArn: arn,
       sessionId: ensureRuntimeSessionId(sessionId),
       hasToken: Boolean(token),
       tokenIss,
-      hint: 'tokenIss must match the runtime customJWTAuthorizer discovery URL issuer',
     });
     if (!token) {
       onError('Not signed in — Cognito access token required to invoke the agent');
