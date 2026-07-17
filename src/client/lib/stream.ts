@@ -59,6 +59,27 @@ interface StreamEvent {
   usage?: Record<string, number>;
 }
 
+function detailFromJson(json: unknown): string | null {
+  if (json == null) return null;
+  if (typeof json === 'string') return json;
+  if (typeof json !== 'object') return String(json);
+
+  const obj = json as Record<string, unknown>;
+  for (const key of ['message', 'Message', 'error', 'Error', 'msg']) {
+    const v = obj[key];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+    if (v && typeof v === 'object') {
+      const nested = detailFromJson(v);
+      if (nested) return nested;
+    }
+  }
+  try {
+    return JSON.stringify(json);
+  } catch {
+    return null;
+  }
+}
+
 /** Prefer server `{ error }` / `{ message }`, else a short body snippet, else status. */
 async function formatHttpError(response: Response): Promise<string> {
   const status = `${response.status}${response.statusText ? ` ${response.statusText}` : ''}`;
@@ -70,9 +91,9 @@ async function formatHttpError(response: Response): Promise<string> {
   }
 
   if (body) {
+    console.warn('[chat] HTTP error body', status, body.slice(0, 500));
     try {
-      const json = JSON.parse(body) as { error?: string; message?: string; message_?: string };
-      const detail = json.error || json.message || json.message_;
+      const detail = detailFromJson(JSON.parse(body));
       if (detail) return `${status}: ${detail}`;
     } catch {
       /* not JSON */
