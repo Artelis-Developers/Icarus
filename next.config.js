@@ -32,6 +32,17 @@ const frameAncestors =
       : "frame-ancestors 'none';";
 
 const nextConfig = {
+  // Ensure Amplify build-time env is inlined into the client bundle.
+  env: {
+    NEXT_PUBLIC_AGENTCORE_REGION:
+      process.env.NEXT_PUBLIC_AGENTCORE_REGION ||
+      process.env.HARNESS_REGION ||
+      'eu-north-1',
+    NEXT_PUBLIC_AGENTCORE_QUALIFIER:
+      process.env.NEXT_PUBLIC_AGENTCORE_QUALIFIER || 'DEFAULT',
+    NEXT_PUBLIC_HARNESS_ARN: process.env.NEXT_PUBLIC_HARNESS_ARN || '',
+    NEXT_PUBLIC_HARNESS_ARN_ORDER: process.env.NEXT_PUBLIC_HARNESS_ARN_ORDER || '',
+  },
   async headers() {
     return [
       {
