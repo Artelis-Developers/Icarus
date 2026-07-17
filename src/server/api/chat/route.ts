@@ -5,7 +5,8 @@ import { withAuth } from '@artelis/auth/server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+/** Browser/tool-using harnesses often need longer than a short chat turn. */
+export const maxDuration = 180;
 
 const REGION = process.env.HARNESS_REGION || 'eu-north-1';
 const MODEL_ID = process.env.BEDROCK_MODEL_ID || 'eu.amazon.nova-pro-v1:0';
@@ -84,6 +85,47 @@ function formatInvokeError(err: unknown): string {
   return parts.join(' — ');
 }
 
+type HarnessStreamEvent = {
+  contentBlockDelta?: { delta?: { text?: string; toolUse?: { input?: string } } };
+  contentBlockStart?: { start?: { toolUse?: { name?: string; toolUseId?: string } } };
+  messageStop?: { stopReason?: string };
+  metadata?: { usage?: Record<string, number> };
+  runtimeClientError?: { message?: string };
+  internalServerException?: { message?: string };
+  validationException?: { message?: string };
+  modelStreamErrorException?: { message?: string };
+  throttlingException?: { message?: string };
+  serviceUnavailableException?: { message?: string };
+};
+
+const FAIL_STOP_REASONS = new Set([
+  'max_tokens',
+  'max_iterations_exceeded',
+  'timeout_exceeded',
+  'max_output_tokens_exceeded',
+  'tool_use', // inline tool — this app doesn't round-trip tool results
+]);
+
+function streamEventError(event: HarnessStreamEvent): string | null {
+  const candidates: Array<{ key: string; payload?: { message?: string } }> = [
+    { key: 'runtimeClientError', payload: event.runtimeClientError },
+    { key: 'internalServerException', payload: event.internalServerException },
+    { key: 'validationException', payload: event.validationException },
+    { key: 'modelStreamErrorException', payload: event.modelStreamErrorException },
+    { key: 'throttlingException', payload: event.throttlingException },
+    { key: 'serviceUnavailableException', payload: event.serviceUnavailableException },
+  ];
+  for (const { key, payload } of candidates) {
+    if (!payload) continue;
+    return payload.message ? `${key}: ${payload.message}` : key;
+  }
+  return null;
+}
+
+function sse(encoder: TextEncoder, payload: Record<string, unknown>): Uint8Array {
+  return encoder.encode(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
 // withAuth verifies the portal Cognito JWT (JWKS + tenant directory lookup)
 // before the harness is ever invoked — the trust boundary for this app, since
 // there is no Lambda behind it. The verified identity (`_user`) isn't needed by
@@ -145,25 +187,39 @@ export const POST = withAuth(async (req: NextRequest, _user) => {
             throw new Error('Harness returned no stream (empty InvokeHarness response)');
           }
 
-          for await (const event of response.stream) {
+          for await (const event of response.stream as AsyncIterable<HarnessStreamEvent>) {
+            const streamErr = streamEventError(event);
+            if (streamErr) {
+              console.error(`[chat] harness stream error agentId=${agentId ?? '(none)'}:`, streamErr);
+              controller.enqueue(sse(encoder, { type: 'error', message: streamErr }));
+              continue;
+            }
+
+            const toolName = event.contentBlockStart?.start?.toolUse?.name;
+            if (toolName) {
+              controller.enqueue(
+                sse(encoder, { type: 'status', message: `Using tool: ${toolName}` })
+              );
+            }
+
             if (event.contentBlockDelta) {
               const delta = event.contentBlockDelta.delta;
               if (delta?.text) {
-                controller.enqueue(
-                  encoder.encode(`data: ${JSON.stringify({ type: 'text', text: delta.text })}\n\n`)
-                );
+                controller.enqueue(sse(encoder, { type: 'text', text: delta.text }));
               }
             } else if (event.messageStop) {
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({ type: 'stop', reason: event.messageStop.stopReason })}\n\n`
-                )
-              );
+              const reason = event.messageStop.stopReason || '';
+              controller.enqueue(sse(encoder, { type: 'stop', reason }));
+              if (FAIL_STOP_REASONS.has(reason)) {
+                const msg =
+                  reason === 'tool_use'
+                    ? 'Harness stopped for an inline tool result (not supported by this app)'
+                    : `Harness stopped early (${reason})`;
+                controller.enqueue(sse(encoder, { type: 'error', message: msg }));
+              }
             } else if (event.metadata) {
               controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({ type: 'metadata', usage: event.metadata.usage })}\n\n`
-                )
+                sse(encoder, { type: 'metadata', usage: event.metadata.usage })
               );
             }
           }

@@ -41,7 +41,7 @@ export interface ChatMessage {
 }
 
 interface StreamEvent {
-  type: 'text' | 'stop' | 'metadata' | 'error';
+  type: 'text' | 'stop' | 'metadata' | 'error' | 'status';
   text?: string;
   reason?: string;
   message?: string;
@@ -79,7 +79,8 @@ export async function streamChat(
   agentId: string,
   onText: (chunk: string) => void,
   onError: (msg: string) => void,
-  onDone: () => void
+  onDone: () => void,
+  onStatus?: (msg: string) => void
 ): Promise<void> {
   const token = resolveAccessToken();
   let response: Response;
@@ -129,6 +130,8 @@ export async function streamChat(
         const evt: StreamEvent = JSON.parse(data);
         if (evt.type === 'text' && evt.text) {
           onText(evt.text);
+        } else if (evt.type === 'status' && evt.message) {
+          onStatus?.(evt.message);
         } else if (evt.type === 'error') {
           onError(evt.message || 'Unknown error');
         }

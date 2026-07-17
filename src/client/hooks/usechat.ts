@@ -204,8 +204,17 @@ export function useChat() {
           assistantText += chunk;
           applyAssistant(assistantText);
         },
-        (errorMsg) => applyAssistant(errorMsg, true),
-        () => {}
+        (errorMsg) => {
+          const combined = assistantText
+            ? `${assistantText}\n\n⚠️ ${errorMsg}`
+            : errorMsg;
+          applyAssistant(combined, true);
+        },
+        () => {},
+        (statusMsg) => {
+          // Soft progress line while tools run (replaced by real text/errors).
+          if (!assistantText) applyAssistant(`_${statusMsg}_`);
+        }
       );
 
       setSending(false);
