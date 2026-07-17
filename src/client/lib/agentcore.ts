@@ -4,12 +4,8 @@
  * - `general` + `order`: Cognito Bearer → bedrock-agentcore …/runtimes/{arn}/invocations
  * - all other agents: unchanged Amplify `/api/chat` (IAM InvokeHarness)
  *
- * Client env (must be NEXT_PUBLIC_* to reach the browser):
- *   NEXT_PUBLIC_HARNESS_ARN       → general (JWT-enabled runtime ARN)
- *   NEXT_PUBLIC_HARNESS_ARN_ORDER → order
- *
- * Values should be the runtime ARN configured with a Cognito JWT authorizer
- * (`…:runtime/…`). Server-side `HARNESS_ARN*` remain for the /api/chat fallback.
+ * IMPORTANT: Next.js only inlines `process.env.NEXT_PUBLIC_*` with static property
+ * access. Never use process.env[dynamicKey] — it is always undefined in the browser.
  */
 
 import type { AgentId } from '@/client/lib/agents';
@@ -17,25 +13,16 @@ import type { AgentId } from '@/client/lib/agents';
 /** Agents that use inbound JWT HTTPS instead of Amplify SSR. */
 const JWT_INVOKE_AGENTS = new Set<AgentId>(['general', 'order']);
 
-const JWT_ARN_ENV_BY_AGENT: Partial<Record<AgentId, string>> = {
-  general: 'NEXT_PUBLIC_HARNESS_ARN',
-  order: 'NEXT_PUBLIC_HARNESS_ARN_ORDER',
-};
-
-function env(name: string): string {
-  return (process.env[name] || '').trim();
-}
-
 export function agentcoreRegion(): string {
   return (
-    env('NEXT_PUBLIC_AGENTCORE_REGION') ||
-    env('NEXT_PUBLIC_HARNESS_REGION') ||
+    process.env.NEXT_PUBLIC_AGENTCORE_REGION?.trim() ||
+    process.env.NEXT_PUBLIC_HARNESS_REGION?.trim() ||
     'eu-north-1'
   );
 }
 
 export function agentcoreQualifier(): string {
-  return env('NEXT_PUBLIC_AGENTCORE_QUALIFIER') || 'DEFAULT';
+  return process.env.NEXT_PUBLIC_AGENTCORE_QUALIFIER?.trim() || 'DEFAULT';
 }
 
 export function isJwtInvokeAgent(agentId: string): boolean {
@@ -46,8 +33,14 @@ export function isJwtInvokeAgent(agentId: string): boolean {
 export function resolveJwtInvokeArn(agentId: string): string {
   const id = (agentId || 'general') as AgentId;
   if (!JWT_INVOKE_AGENTS.has(id)) return '';
-  const key = JWT_ARN_ENV_BY_AGENT[id];
-  return key ? env(key) : '';
+
+  if (id === 'general') {
+    return process.env.NEXT_PUBLIC_HARNESS_ARN?.trim() || '';
+  }
+  if (id === 'order') {
+    return process.env.NEXT_PUBLIC_HARNESS_ARN_ORDER?.trim() || '';
+  }
+  return '';
 }
 
 /** True when this agent should call AgentCore HTTPS with Cognito JWT (not /api/chat). */
