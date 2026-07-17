@@ -11,6 +11,7 @@ import { getPortalAuth, STORAGE_KEYS } from '@artelis/auth';
 import {
   buildInvocationUrl,
   ensureRuntimeSessionId,
+  isJwtInvokeAgent,
   resolveJwtInvokeArn,
   useAgentcoreJwtInvoke,
 } from '@/client/lib/agentcore';
@@ -357,10 +358,17 @@ export async function streamChat(
     return;
   }
 
-  console.info('[chat] path=Amplify /api/chat (IAM InvokeHarness)', {
-    agentId,
-    sessionId,
-    hasToken: Boolean(token),
-  });
+  if (isJwtInvokeAgent(agentId)) {
+    console.warn(
+      '[chat] path=Amplify /api/chat — JWT agent but NEXT_PUBLIC_HARNESS_ARN* missing in this build. Set env on Amplify and redeploy.',
+      { agentId }
+    );
+  } else {
+    console.info('[chat] path=Amplify /api/chat (IAM InvokeHarness)', {
+      agentId,
+      sessionId,
+      hasToken: Boolean(token),
+    });
+  }
   await streamViaApiChat(messages, sessionId, agentId, token, onText, onError, onDone, onStatus);
 }
