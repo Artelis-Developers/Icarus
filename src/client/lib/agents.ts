@@ -21,7 +21,7 @@ export interface Agent {
 export const AGENTS: Agent[] = [
   { id: 'general', name: 'General Assistant', desc: 'Everyday help across the group', color: 'var(--accent)', wired: true },
   { id: 'dev', name: 'Request Developer', desc: 'Scope and draft software requests', color: '#ffa94d', wired: true },
-  { id: 'order', name: 'Order Bot', desc: 'Order products anywhere', color: '#5c7cfa', wired: true },
+  { id: 'order', name: 'Order Agent', desc: 'Order products anywhere', color: '#5c7cfa', wired: true },
   { id: 'req_prio', name: 'Request Prioritizer', desc: 'Rank and triage incoming requests', color: '#ffd43b', wired: true },
   { id: 'req_plan', name: 'Request Planner', desc: 'Plan and break down requests', color: '#da77f2', wired: true },
 ];
