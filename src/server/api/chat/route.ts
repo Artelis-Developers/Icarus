@@ -5,11 +5,17 @@ import { withAuth } from '@artelis/auth/server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-/** Browser/tool-using harnesses often need longer than a short chat turn. */
-export const maxDuration = 180;
+/**
+ * Amplify Hosting SSR compute hard-caps around ~30s (maxDuration here does not raise it).
+ * Keep aligned with that platform limit.
+ */
+export const maxDuration = 30;
 
 const REGION = process.env.HARNESS_REGION || 'eu-north-1';
 const MODEL_ID = process.env.BEDROCK_MODEL_ID || 'eu.amazon.nova-pro-v1:0';
+
+/** Leave headroom under Amplify's ~30s kill so we can return a JSON body instead of an empty 500. */
+const AMPLIFY_SOFT_TIMEOUT_MS = 25_000;
 
 // Set only in a cross-account frontend (e.g. prod Amplify in a separate account).
 // When empty, the client uses its own ambient identity — the same-account behaviour.
@@ -68,6 +74,13 @@ function resolveHarnessArn(agentId?: string): string {
   return fallback;
 }
 
+/** AgentCore requires runtimeSessionId length >= 33. */
+function ensureSessionId(sessionId?: string): string {
+  const sid = sessionId || crypto.randomUUID();
+  if (sid.length >= 33) return sid;
+  return `${sid}-${crypto.randomUUID()}`;
+}
+
 /** Pull a useful message from AWS SDK / generic errors for logs + the client. */
 function formatInvokeError(err: unknown): string {
   if (!(err instanceof Error)) return String(err);
@@ -77,11 +90,21 @@ function formatInvokeError(err: unknown): string {
     Code?: string;
     code?: string;
     $metadata?: { httpStatusCode?: number; requestId?: string };
+    name?: string;
   };
   const code = aws.Code || aws.code;
   if (code && !parts.includes(code)) parts.push(`code=${code}`);
   if (aws.$metadata?.httpStatusCode) parts.push(`http=${aws.$metadata.httpStatusCode}`);
   if (aws.$metadata?.requestId) parts.push(`requestId=${aws.$metadata.requestId}`);
+
+  const name = err.name || '';
+  if (name === 'AbortError' || /aborted/i.test(err.message)) {
+    return (
+      'Harness timed out (~25s). Amplify SSR kills requests around 30s — ' +
+      'agents that use the browser tool often exceed this. ' +
+      parts.join(' — ')
+    );
+  }
   return parts.join(' — ');
 }
 
@@ -122,8 +145,70 @@ function streamEventError(event: HarnessStreamEvent): string | null {
   return null;
 }
 
-function sse(encoder: TextEncoder, payload: Record<string, unknown>): Uint8Array {
-  return encoder.encode(`data: ${JSON.stringify(payload)}\n\n`);
+function sseLine(payload: Record<string, unknown>): string {
+  return `data: ${JSON.stringify(payload)}\n\n`;
+}
+
+/**
+ * Amplify Hosting does not support Next.js streaming responses.
+ * Buffer the harness event stream into one SSE body so the client parser still works,
+ * and failures can return JSON with a real error message instead of an empty 500.
+ */
+async function collectHarnessSse(
+  command: InvokeHarnessCommand,
+  agentId: string | undefined,
+  signal: AbortSignal
+): Promise<string> {
+  const client = getClient();
+  const response = await client.send(command, { abortSignal: signal });
+
+  if (!response.stream) {
+    throw new Error('Harness returned no stream (empty InvokeHarness response)');
+  }
+
+  const lines: string[] = [];
+
+  for await (const event of response.stream as AsyncIterable<HarnessStreamEvent>) {
+    if (signal.aborted) {
+      const abortErr = new Error('Harness timed out');
+      abortErr.name = 'AbortError';
+      throw abortErr;
+    }
+
+    const streamErr = streamEventError(event);
+    if (streamErr) {
+      console.error(`[chat] harness stream error agentId=${agentId ?? '(none)'}:`, streamErr);
+      lines.push(sseLine({ type: 'error', message: streamErr }));
+      continue;
+    }
+
+    const toolName = event.contentBlockStart?.start?.toolUse?.name;
+    if (toolName) {
+      lines.push(sseLine({ type: 'status', message: `Using tool: ${toolName}` }));
+    }
+
+    if (event.contentBlockDelta) {
+      const delta = event.contentBlockDelta.delta;
+      if (delta?.text) {
+        lines.push(sseLine({ type: 'text', text: delta.text }));
+      }
+    } else if (event.messageStop) {
+      const reason = event.messageStop.stopReason || '';
+      lines.push(sseLine({ type: 'stop', reason }));
+      if (FAIL_STOP_REASONS.has(reason)) {
+        const msg =
+          reason === 'tool_use'
+            ? 'Harness stopped for an inline tool result (not supported by this app)'
+            : `Harness stopped early (${reason})`;
+        lines.push(sseLine({ type: 'error', message: msg }));
+      }
+    } else if (event.metadata) {
+      lines.push(sseLine({ type: 'metadata', usage: event.metadata.usage }));
+    }
+  }
+
+  lines.push('data: [DONE]\n\n');
+  return lines.join('');
 }
 
 // withAuth verifies the portal Cognito JWT (JWKS + tenant directory lookup)
@@ -162,11 +247,9 @@ export const POST = withAuth(async (req: NextRequest, _user) => {
       content: [{ text: m.content }],
     }));
 
-    const sid = sessionId || crypto.randomUUID();
-
     const command = new InvokeHarnessCommand({
       harnessArn,
-      runtimeSessionId: sid,
+      runtimeSessionId: ensureSessionId(sessionId),
       messages: harnessMessages,
       model: {
         bedrockModelConfig: {
@@ -175,74 +258,27 @@ export const POST = withAuth(async (req: NextRequest, _user) => {
       },
     });
 
-    const encoder = new TextEncoder();
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), AMPLIFY_SOFT_TIMEOUT_MS);
 
-    const stream = new ReadableStream({
-      async start(controller) {
-        try {
-          const client = getClient();
-          const response = await client.send(command);
-
-          if (!response.stream) {
-            throw new Error('Harness returned no stream (empty InvokeHarness response)');
-          }
-
-          for await (const event of response.stream as AsyncIterable<HarnessStreamEvent>) {
-            const streamErr = streamEventError(event);
-            if (streamErr) {
-              console.error(`[chat] harness stream error agentId=${agentId ?? '(none)'}:`, streamErr);
-              controller.enqueue(sse(encoder, { type: 'error', message: streamErr }));
-              continue;
-            }
-
-            const toolName = event.contentBlockStart?.start?.toolUse?.name;
-            if (toolName) {
-              controller.enqueue(
-                sse(encoder, { type: 'status', message: `Using tool: ${toolName}` })
-              );
-            }
-
-            if (event.contentBlockDelta) {
-              const delta = event.contentBlockDelta.delta;
-              if (delta?.text) {
-                controller.enqueue(sse(encoder, { type: 'text', text: delta.text }));
-              }
-            } else if (event.messageStop) {
-              const reason = event.messageStop.stopReason || '';
-              controller.enqueue(sse(encoder, { type: 'stop', reason }));
-              if (FAIL_STOP_REASONS.has(reason)) {
-                const msg =
-                  reason === 'tool_use'
-                    ? 'Harness stopped for an inline tool result (not supported by this app)'
-                    : `Harness stopped early (${reason})`;
-                controller.enqueue(sse(encoder, { type: 'error', message: msg }));
-              }
-            } else if (event.metadata) {
-              controller.enqueue(
-                sse(encoder, { type: 'metadata', usage: event.metadata.usage })
-              );
-            }
-          }
-        } catch (err) {
-          const msg = formatInvokeError(err);
-          console.error(`[chat] harness invoke failed agentId=${agentId ?? '(none)'}:`, err);
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ type: 'error', message: msg })}\n\n`)
-          );
-        }
-
-        controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-        controller.close();
-      },
-    });
-
-    return new Response(stream, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-      },
-    });
+    try {
+      const sseBody = await collectHarnessSse(command, agentId, ac.signal);
+      return new Response(sseBody, {
+        headers: {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache',
+        },
+      });
+    } catch (err) {
+      const msg = formatInvokeError(err);
+      console.error(`[chat] harness invoke failed agentId=${agentId ?? '(none)'}:`, err);
+      const aborted =
+        (err instanceof Error && err.name === 'AbortError') ||
+        (err instanceof Error && /aborted|timed out/i.test(err.message));
+      return Response.json({ error: msg }, { status: aborted ? 504 : 502 });
+    } finally {
+      clearTimeout(timer);
+    }
   } catch (err) {
     const msg = formatInvokeError(err);
     console.error('[chat] unhandled error:', err);
