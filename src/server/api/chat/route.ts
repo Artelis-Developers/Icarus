@@ -67,91 +67,129 @@ function resolveHarnessArn(agentId?: string): string {
   return fallback;
 }
 
+/** Pull a useful message from AWS SDK / generic errors for logs + the client. */
+function formatInvokeError(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+
+  const parts = [err.name !== 'Error' ? err.name : null, err.message].filter(Boolean);
+  const aws = err as Error & {
+    Code?: string;
+    code?: string;
+    $metadata?: { httpStatusCode?: number; requestId?: string };
+  };
+  const code = aws.Code || aws.code;
+  if (code && !parts.includes(code)) parts.push(`code=${code}`);
+  if (aws.$metadata?.httpStatusCode) parts.push(`http=${aws.$metadata.httpStatusCode}`);
+  if (aws.$metadata?.requestId) parts.push(`requestId=${aws.$metadata.requestId}`);
+  return parts.join(' — ');
+}
+
 // withAuth verifies the portal Cognito JWT (JWKS + tenant directory lookup)
 // before the harness is ever invoked — the trust boundary for this app, since
 // there is no Lambda behind it. The verified identity (`_user`) isn't needed by
 // the harness call itself; the point is that anonymous callers are rejected.
 export const POST = withAuth(async (req: NextRequest, _user) => {
-  const body = await req.json();
-  const { messages, sessionId, agentId } = body;
-
-  if (!messages || !Array.isArray(messages)) {
-    return Response.json({ error: 'messages array required' }, { status: 400 });
-  }
-
-  let harnessArn: string;
   try {
-    harnessArn = resolveHarnessArn(agentId);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return Response.json({ error: msg }, { status: 400 });
-  }
+    let body: { messages?: unknown; sessionId?: string; agentId?: string };
+    try {
+      body = await req.json();
+    } catch {
+      return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
+    }
 
-  console.log(
-    `[chat] agentId=${agentId ?? '(none)'} → harness=${harnessArn.split('/').pop()}`
-  );
+    const { messages, sessionId, agentId } = body;
 
-  const harnessMessages = messages.map((m: { role: string; content: string }) => ({
-    role: (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
-    content: [{ text: m.content }],
-  }));
+    if (!messages || !Array.isArray(messages)) {
+      return Response.json({ error: 'messages array required' }, { status: 400 });
+    }
 
-  const sid = sessionId || crypto.randomUUID();
+    let harnessArn: string;
+    try {
+      harnessArn = resolveHarnessArn(agentId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return Response.json({ error: msg }, { status: 400 });
+    }
 
-  const command = new InvokeHarnessCommand({
-    harnessArn,
-    runtimeSessionId: sid,
-    messages: harnessMessages,
-    model: {
-      bedrockModelConfig: {
-        modelId: MODEL_ID,
+    console.log(
+      `[chat] agentId=${agentId ?? '(none)'} → harness=${harnessArn.split('/').pop()}`
+    );
+
+    const harnessMessages = messages.map((m: { role: string; content: string }) => ({
+      role: (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
+      content: [{ text: m.content }],
+    }));
+
+    const sid = sessionId || crypto.randomUUID();
+
+    const command = new InvokeHarnessCommand({
+      harnessArn,
+      runtimeSessionId: sid,
+      messages: harnessMessages,
+      model: {
+        bedrockModelConfig: {
+          modelId: MODEL_ID,
+        },
       },
-    },
-  });
+    });
 
-  const encoder = new TextEncoder();
+    const encoder = new TextEncoder();
 
-  const stream = new ReadableStream({
-    async start(controller) {
-      try {
-        const client = getClient();
-        const response = await client.send(command);
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          const client = getClient();
+          const response = await client.send(command);
 
-        for await (const event of response.stream) {
-          if (event.contentBlockDelta) {
-            const delta = event.contentBlockDelta.delta;
-            if (delta?.text) {
+          if (!response.stream) {
+            throw new Error('Harness returned no stream (empty InvokeHarness response)');
+          }
+
+          for await (const event of response.stream) {
+            if (event.contentBlockDelta) {
+              const delta = event.contentBlockDelta.delta;
+              if (delta?.text) {
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify({ type: 'text', text: delta.text })}\n\n`)
+                );
+              }
+            } else if (event.messageStop) {
               controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify({ type: 'text', text: delta.text })}\n\n`)
+                encoder.encode(
+                  `data: ${JSON.stringify({ type: 'stop', reason: event.messageStop.stopReason })}\n\n`
+                )
+              );
+            } else if (event.metadata) {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ type: 'metadata', usage: event.metadata.usage })}\n\n`
+                )
               );
             }
-          } else if (event.messageStop) {
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ type: 'stop', reason: event.messageStop.stopReason })}\n\n`)
-            );
-          } else if (event.metadata) {
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ type: 'metadata', usage: event.metadata.usage })}\n\n`)
-            );
           }
+        } catch (err) {
+          const msg = formatInvokeError(err);
+          console.error(`[chat] harness invoke failed agentId=${agentId ?? '(none)'}:`, err);
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ type: 'error', message: msg })}\n\n`)
+          );
         }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ type: 'error', message: msg })}\n\n`)
-        );
-      }
 
-      controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-      controller.close();
-    },
-  });
+        controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+        controller.close();
+      },
+    });
 
-  return new Response(stream, {
-    headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-    },
-  });
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    });
+  } catch (err) {
+    const msg = formatInvokeError(err);
+    console.error('[chat] unhandled error:', err);
+    return Response.json({ error: msg }, { status: 500 });
+  }
 });

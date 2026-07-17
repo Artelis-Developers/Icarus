@@ -48,6 +48,31 @@ interface StreamEvent {
   usage?: Record<string, number>;
 }
 
+/** Prefer server `{ error }` / `{ message }`, else a short body snippet, else status. */
+async function formatHttpError(response: Response): Promise<string> {
+  const status = `${response.status}${response.statusText ? ` ${response.statusText}` : ''}`;
+  let body = '';
+  try {
+    body = (await response.text()).trim();
+  } catch {
+    /* ignore */
+  }
+
+  if (body) {
+    try {
+      const json = JSON.parse(body) as { error?: string; message?: string };
+      const detail = json.error || json.message;
+      if (detail) return `${status}: ${detail}`;
+    } catch {
+      /* not JSON */
+    }
+    const snippet = body.length > 280 ? `${body.slice(0, 280)}…` : body;
+    return `${status}: ${snippet}`;
+  }
+
+  return `${status}: Failed to connect to harness (empty response)`;
+}
+
 export async function streamChat(
   messages: ChatMessage[],
   sessionId: string,
@@ -57,19 +82,26 @@ export async function streamChat(
   onDone: () => void
 ): Promise<void> {
   const token = resolveAccessToken();
-  const response = await fetch('/api/chat', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      // Portal Cognito bearer so the withAuth-protected route accepts the call.
-      // Omitted (no token) before the handshake or in standalone dev.
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify({ messages, sessionId, agentId }),
-  });
+  let response: Response;
+  try {
+    response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        // Portal Cognito bearer so the withAuth-protected route accepts the call.
+        // Omitted (no token) before the handshake or in standalone dev.
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ messages, sessionId, agentId }),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    onError(`Network error: ${msg}`);
+    return;
+  }
 
   if (!response.ok || !response.body) {
-    onError('Failed to connect to harness');
+    onError(await formatHttpError(response));
     return;
   }
 
