@@ -180,9 +180,14 @@ export function useChat() {
         )
       );
 
-      // History = everything in this conversation up to and including the user turn.
+      // History for the harness = prior turns + this user message.
+      // Skip client-side connection errors — those never came from the harness,
+      // and feeding them back poisons the next turn (and CloudWatch looks "wrong").
       const base = existing ? existing.messages : [];
-      const history: ChatMessage[] = [...base, { role: 'user', content: text }];
+      const history: ChatMessage[] = [
+        ...base.filter((m) => !m.isError),
+        { role: 'user', content: text },
+      ];
 
       let assistantText = '';
       const applyAssistant = (content: string, isError = false) => {
