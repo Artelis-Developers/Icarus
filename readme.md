@@ -73,12 +73,12 @@ Set on the Amplify app (both app-level and branch-level); `amplify.yml` writes t
 Other agents always use `/api/chat`. Until the two `NEXT_PUBLIC_HARNESS_ARN*` vars are set,
 `general` / `order` also fall back to `/api/chat`.
 
-**Harness / model** (Amplify SSR `/api/chat` — IAM `InvokeHarness`, used by `dev` / `req_prio` / `req_plan` and as fallback):
+**Harness / model** (Amplify SSR `/api/chat` — IAM `InvokeHarness`, used as fallback when JWT invoke is unset):
 
 | Key | Example |
 |---|---|
 | `HARNESS_ARN` | `arn:aws:bedrock-agentcore:eu-north-1:…:harness/…` (agent `general` + fallback) |
-| `HARNESS_ARN_REQ_DEV` / `HARNESS_ARN_ORDER` / `HARNESS_ARN_REQ_PRIO` / `HARNESS_ARN_REQ_PLAN` | per-agent harness ARNs |
+| `HARNESS_ARN_ORDER` | harness ARN for the `order` agent |
 | `HARNESS_REGION` | `eu-north-1` (default) |
 | `BEDROCK_MODEL_ID` | `eu.amazon.nova-pro-v1:0` (default) |
 | `AGENT_INVOKE_ROLE_ARN` / `AGENT_INVOKE_EXTERNAL_ID` | cross-account invoke (optional) |

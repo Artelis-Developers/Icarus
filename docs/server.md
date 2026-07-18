@@ -32,10 +32,7 @@
 | Var | Required | Default | Purpose |
 |---|---|---|---|
 | `HARNESS_ARN` | ✅ | — | Harness for the `general` agent (also the fallback) |
-| `HARNESS_ARN_REQ_DEV` | for `dev` | — | Harness for the `dev` agent |
 | `HARNESS_ARN_ORDER` | for `order` | — | Harness for the `order` agent |
-| `HARNESS_ARN_REQ_PRIO` | for `req_prio` | — | Harness for `req_prio` (legacy fallback: `HARNESS_ARN__REQ_PRIO`) |
-| `HARNESS_ARN_REQ_PLAN` | for `req_plan` | — | Harness for the `req_plan` agent |
 | `HARNESS_REGION` | — | `eu-north-1` | AWS region of the harnesses |
 | `BEDROCK_MODEL_ID` | — | `eu.amazon.nova-pro-v1:0` | Model the harness uses |
 | `AGENT_INVOKE_ROLE_ARN` | — | (empty = same account) | Cross-account role to assume before invoking |

@@ -28,30 +28,6 @@ export function AgentIcon({ agent, size = 18 }: Props) {
           <path d="M3 4h2l2.4 11.2a2 2 0 0 0 2 1.6h8.8a2 2 0 0 0 2-1.6L22 8H6" />
         </svg>
       );
-    case 'dev':
-      return (
-        <svg {...svgBase} {...dims}>
-          <path d="M16 18l6-6-6-6" />
-          <path d="M8 6l-6 6 6 6" />
-        </svg>
-      );
-    case 'req_prio':
-      return (
-        <svg {...svgBase} {...dims}>
-          <path d="M4 6h16" />
-          <path d="M8 12h12" />
-          <path d="M12 18h8" />
-          <path d="M4 6v12" />
-        </svg>
-      );
-    case 'req_plan':
-      return (
-        <svg {...svgBase} {...dims}>
-          <rect x="3" y="4" width="18" height="18" rx="2" />
-          <path d="M8 10h8" />
-          <path d="M8 14h5" />
-        </svg>
-      );
     case 'general':
     default:
       return (
