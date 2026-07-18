@@ -57,7 +57,8 @@
                   ],
                   "Resource": [
                     { "Fn::Sub": "arn:aws:bedrock-agentcore:${Region}:${AccountId}:harness/*" },
-                    { "Fn::Sub": "arn:aws:bedrock-agentcore:${Region}:${AccountId}:runtime/*" }
+                    { "Fn::Sub": "arn:aws:bedrock-agentcore:${Region}:${AccountId}:runtime/*" },
+                    { "Fn::Sub": "arn:aws:bedrock-agentcore:${Region}:${AccountId}:runtime/*/runtime-endpoint/*" }
                   ]
                 },
                 {
