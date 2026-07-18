@@ -32,10 +32,11 @@ const HARNESS_ENV_BY_AGENT: Record<string, string> = {
   order: 'HARNESS_ARN_ORDER',
 };
 
-/** Runtime env var per UI agent — IAM InvokeAgentRuntime (dev / prioritizer / planner). */
+/** Runtime env var per UI agent — IAM InvokeAgentRuntime (parked agents re-add here). */
 const RUNTIME_ENV_BY_AGENT: Record<string, string> = {
-  dev: 'RUNTIME_ARN_REQ_DEV',
-  req_plan: 'RUNTIME_ARN_REQ_PLAN',
+  // Parked until async invoke / product ready:
+  // dev: 'RUNTIME_ARN_REQ_DEV',
+  // req_plan: 'RUNTIME_ARN_REQ_PLAN',
 };
 
 function getClient() {
