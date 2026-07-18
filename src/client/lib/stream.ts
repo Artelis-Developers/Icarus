@@ -516,7 +516,7 @@ export async function streamChat(
       { agentId }
     );
   } else {
-    console.info('[chat] path=Amplify /api/chat (IAM InvokeHarness)', {
+    console.info('[chat] path=Amplify /api/chat (IAM harness or runtime)', {
       agentId,
       sessionId,
       hasToken: Boolean(token),

@@ -267,13 +267,13 @@ async function collectHarnessSse(
 }
 
 /** Pull assistant text out of heterogeneous runtime JSON payloads. */
-function extractRuntimeText(data: unknown): string | null {
-  if (data == null) return null;
+function extractRuntimeText(data: unknown, depth = 0): string | null {
+  if (data == null || depth > 6) return null;
   if (typeof data === 'string') {
     const t = data.trim();
     if (!t || t === '[DONE]') return null;
     try {
-      return extractRuntimeText(JSON.parse(t));
+      return extractRuntimeText(JSON.parse(t), depth + 1);
     } catch {
       return t;
     }
@@ -281,14 +281,28 @@ function extractRuntimeText(data: unknown): string | null {
   if (typeof data !== 'object') return null;
 
   const obj = data as Record<string, unknown>;
-  for (const key of ['text', 'message', 'content', 'output', 'response', 'result', 'answer']) {
+
+  if (typeof obj.error === 'string' && obj.error.trim()) return null; // handled by caller
+  if (obj.type === 'error') return null;
+
+  for (const key of ['text', 'answer', 'outputText', 'completion']) {
     const v = obj[key];
+    if (typeof v === 'string' && v.trim()) return v;
+  }
+
+  // Nested objects first (Strands: { message: { role, content: [{ text }] } })
+  for (const key of ['message', 'content', 'output', 'response', 'result', 'event', 'data', 'body']) {
+    const v = obj[key];
+    if (v && typeof v === 'object') {
+      const nested = extractRuntimeText(v, depth + 1);
+      if (nested) return nested;
+    }
     if (typeof v === 'string' && v.trim()) return v;
   }
 
   if (typeof obj.bytes === 'string' && obj.bytes) {
     try {
-      return extractRuntimeText(Buffer.from(obj.bytes, 'base64').toString('utf8'));
+      return extractRuntimeText(Buffer.from(obj.bytes, 'base64').toString('utf8'), depth + 1);
     } catch {
       /* ignore */
     }
@@ -300,9 +314,7 @@ function extractRuntimeText(data: unknown): string | null {
 
   if (Array.isArray(obj.messages)) {
     for (let i = obj.messages.length - 1; i >= 0; i--) {
-      const msg = obj.messages[i] as { role?: string; content?: unknown };
-      if (msg?.role && msg.role !== 'assistant') continue;
-      const nested = extractRuntimeText(msg.content);
+      const nested = extractRuntimeText(obj.messages[i], depth + 1);
       if (nested) return nested;
     }
   }
@@ -310,10 +322,8 @@ function extractRuntimeText(data: unknown): string | null {
   if (Array.isArray(obj.content)) {
     const parts: string[] = [];
     for (const block of obj.content) {
-      if (typeof block === 'string') parts.push(block);
-      else if (block && typeof block === 'object' && typeof (block as { text?: string }).text === 'string') {
-        parts.push((block as { text: string }).text);
-      }
+      const nested = extractRuntimeText(block, depth + 1);
+      if (nested) parts.push(nested);
     }
     if (parts.length) return parts.join('');
   }
@@ -321,9 +331,19 @@ function extractRuntimeText(data: unknown): string | null {
   return null;
 }
 
+function runtimeErrorMessage(data: unknown): string | null {
+  if (!data || typeof data !== 'object') return null;
+  const obj = data as Record<string, unknown>;
+  if (typeof obj.error === 'string' && obj.error.trim()) return obj.error.trim();
+  if (obj.type === 'error' && typeof obj.message === 'string') return obj.message;
+  if (typeof obj.message === 'string' && /error|fail|denied/i.test(obj.message)) return obj.message;
+  return null;
+}
+
 /**
  * Buffer InvokeAgentRuntime body into our SSE shape.
  * Runtime agents return a blob (JSON / SSE / plain text), not the harness event stream.
+ * @see https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-invoke-agent.html
  */
 async function collectRuntimeSse(
   command: InvokeAgentRuntimeCommand,
@@ -343,6 +363,9 @@ async function collectRuntimeSse(
     throw abortErr;
   }
 
+  const statusCode = response.statusCode ?? 200;
+  const contentType = response.contentType || '';
+
   const body =
     typeof (response.response as { transformToString?: () => Promise<string> }).transformToString ===
     'function'
@@ -351,6 +374,22 @@ async function collectRuntimeSse(
 
   const lines: string[] = [];
   const trimmed = (body || '').trim();
+  const preview = trimmed.slice(0, 400);
+
+  console.log(
+    `[chat] runtime agentId=${agentId ?? '(none)'} status=${statusCode} contentType=${contentType || '?'} bodyChars=${trimmed.length} preview=${JSON.stringify(preview)}`
+  );
+
+  if (statusCode >= 400) {
+    lines.push(
+      sseLine({
+        type: 'error',
+        message: `Runtime HTTP ${statusCode}: ${preview || '(empty body)'}`,
+      })
+    );
+    lines.push('data: [DONE]\n\n');
+    return lines.join('');
+  }
 
   if (!trimmed) {
     lines.push(sseLine({ type: 'error', message: 'Runtime returned an empty body' }));
@@ -358,8 +397,15 @@ async function collectRuntimeSse(
     return lines.join('');
   }
 
-  // Passthrough / re-emit if the agent already spoke SSE
-  if (trimmed.includes('data:')) {
+  const finish = (emitted: boolean) => {
+    if (!emitted) return false;
+    lines.push(sseLine({ type: 'stop', reason: 'end_turn' }));
+    lines.push('data: [DONE]\n\n');
+    return true;
+  };
+
+  // text/event-stream (or any body with data: lines) — AWS sample treats each data line as content
+  if (contentType.includes('text/event-stream') || trimmed.includes('data:')) {
     let emitted = false;
     for (const rawLine of trimmed.split(/\r?\n/)) {
       if (!rawLine.startsWith('data:')) continue;
@@ -367,13 +413,14 @@ async function collectRuntimeSse(
       if (!payload || payload === '[DONE]') continue;
       try {
         const parsed = JSON.parse(payload) as Record<string, unknown>;
-        if (parsed.type === 'text' && typeof parsed.text === 'string') {
-          lines.push(sseLine({ type: 'text', text: parsed.text }));
+        const errMsg = runtimeErrorMessage(parsed);
+        if (errMsg) {
+          lines.push(sseLine({ type: 'error', message: errMsg }));
           emitted = true;
           continue;
         }
-        if (parsed.type === 'error') {
-          lines.push(sseLine({ type: 'error', message: parsed.message ?? 'Runtime error' }));
+        if (parsed.type === 'text' && typeof parsed.text === 'string') {
+          lines.push(sseLine({ type: 'text', text: parsed.text }));
           emitted = true;
           continue;
         }
@@ -381,17 +428,20 @@ async function collectRuntimeSse(
         if (text) {
           lines.push(sseLine({ type: 'text', text }));
           emitted = true;
+        } else {
+          // Some agents put the utterance as the raw JSON line string fields we don't know —
+          // fall back to the payload string only if it looks like prose, not a big object dump.
+          if (!payload.startsWith('{') && !payload.startsWith('[')) {
+            lines.push(sseLine({ type: 'text', text: payload }));
+            emitted = true;
+          }
         }
       } catch {
         lines.push(sseLine({ type: 'text', text: payload }));
         emitted = true;
       }
     }
-    if (emitted) {
-      lines.push(sseLine({ type: 'stop', reason: 'end_turn' }));
-      lines.push('data: [DONE]\n\n');
-      return lines.join('');
-    }
+    if (finish(emitted)) return lines.join('');
   }
 
   // NDJSON
@@ -401,7 +451,14 @@ async function collectRuntimeSse(
       const t = line.trim();
       if (!t) continue;
       try {
-        const text = extractRuntimeText(JSON.parse(t));
+        const parsed = JSON.parse(t);
+        const errMsg = runtimeErrorMessage(parsed);
+        if (errMsg) {
+          lines.push(sseLine({ type: 'error', message: errMsg }));
+          emitted = true;
+          continue;
+        }
+        const text = extractRuntimeText(parsed);
         if (text) {
           lines.push(sseLine({ type: 'text', text }));
           emitted = true;
@@ -410,30 +467,39 @@ async function collectRuntimeSse(
         /* ignore bad line */
       }
     }
-    if (emitted) {
-      lines.push(sseLine({ type: 'stop', reason: 'end_turn' }));
-      lines.push('data: [DONE]\n\n');
-      return lines.join('');
-    }
+    if (finish(emitted)) return lines.join('');
   }
 
   try {
-    const text = extractRuntimeText(JSON.parse(trimmed));
+    const parsed = JSON.parse(trimmed);
+    const errMsg = runtimeErrorMessage(parsed);
+    if (errMsg) {
+      lines.push(sseLine({ type: 'error', message: errMsg }));
+      lines.push('data: [DONE]\n\n');
+      return lines.join('');
+    }
+    const text = extractRuntimeText(parsed);
     if (text) {
       lines.push(sseLine({ type: 'text', text }));
-      lines.push(sseLine({ type: 'stop', reason: 'end_turn' }));
-      lines.push('data: [DONE]\n\n');
+      finish(true);
       return lines.join('');
     }
   } catch {
     /* plain text */
   }
 
-  console.log(
-    `[chat] runtime agentId=${agentId ?? '(none)'} contentType=${response.contentType ?? '?'} bodyChars=${trimmed.length}`
-  );
-  lines.push(sseLine({ type: 'text', text: trimmed }));
-  lines.push(sseLine({ type: 'stop', reason: 'end_turn' }));
+  // Plain text / unknown JSON — show it rather than a opaque streaming failure
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    lines.push(
+      sseLine({
+        type: 'error',
+        message: `Runtime returned JSON we could not parse as assistant text: ${preview}`,
+      })
+    );
+  } else {
+    lines.push(sseLine({ type: 'text', text: trimmed }));
+    lines.push(sseLine({ type: 'stop', reason: 'end_turn' }));
+  }
   lines.push('data: [DONE]\n\n');
   return lines.join('');
 }
@@ -491,7 +557,8 @@ export const POST = withAuth(async (req: NextRequest, _user) => {
           qualifier: target.qualifier,
           runtimeSessionId: ensureSessionId(sessionId),
           contentType: 'application/json',
-          accept: 'application/json',
+          // Prefer event-stream when the agent supports it; JSON still accepted.
+          accept: 'text/event-stream, application/json',
           payload: new TextEncoder().encode(JSON.stringify({ prompt })),
         });
 
