@@ -6,20 +6,20 @@
 
 | File | Purpose |
 |---|---|
-| `api/chat/route.ts` | `POST /api/chat`. Verifies portal JWT (`withAuth`). `general` / `order` → IAM `InvokeHarnessCommand`. `dev` / `req_prio` / `req_plan` → IAM `InvokeAgentRuntimeCommand`. Streams SSE. Production chat for `general` / `order` prefers browser → AgentCore JWT (see `src/client/lib/stream.ts` + `agentcore.ts`). |
+| `api/chat/route.ts` | `POST /api/chat`. Verifies portal JWT (`withAuth`). `general` / `order` → IAM `InvokeHarnessCommand`. `dev` / `req_plan` → IAM `InvokeAgentRuntimeCommand`. Streams SSE. Production chat for `general` / `order` prefers browser → AgentCore JWT (see `src/client/lib/stream.ts` + `agentcore.ts`). |
 
 ## How it works
 
 1. **Auth first.** The handler is wrapped in `withAuth` (from `@artelis/auth/server`), which
    verifies the portal Cognito JWT (JWKS + tenant-directory lookup) before any agent call.
    Anonymous callers get 401. In production, agents `general` and `order` may bypass this route
-   (browser → AgentCore JWT HTTPS via `NEXT_PUBLIC_HARNESS_ARN*`); `dev` / `req_prio` / `req_plan`
+   (browser → AgentCore JWT HTTPS via `NEXT_PUBLIC_HARNESS_ARN*`); `dev` / `req_plan`
    always use this IAM `/api/chat` path.
 2. Receives `POST /api/chat` with `{ messages, sessionId, agentId }`.
 3. Branches by agent:
    - **Harness** (`general` / `order`): resolves `HARNESS_ARN*` → `InvokeHarnessCommand` with
      message history + model config.
-   - **Runtime** (`dev` / `req_prio` / `req_plan`): resolves `RUNTIME_ARN_REQ_*` (strips optional
+   - **Runtime** (`dev` / `req_plan`): resolves `RUNTIME_ARN_REQ_*` (strips optional
      `/runtime-endpoint/{qualifier}`) → `InvokeAgentRuntimeCommand` with `{ prompt }` payload.
 4. Picks credentials (`getClient`): ambient compute-role in the same account, or an assumed
    cross-account role when `AGENT_INVOKE_ROLE_ARN` is set.
@@ -44,7 +44,6 @@
 | Var | Required | Default | Purpose |
 |---|---|---|---|
 | `RUNTIME_ARN_REQ_DEV` | for `dev` | — | Runtime ARN for Request Developer |
-| `RUNTIME_ARN_REQ_PRIO` | for `req_prio` | — | Runtime ARN for Request Prioritizer |
 | `RUNTIME_ARN_REQ_PLAN` | for `req_plan` | — | Runtime ARN for Request Planner |
 
 **Auth (via `@artelis/auth`):**

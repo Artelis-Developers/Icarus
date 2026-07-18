@@ -80,11 +80,11 @@ Other agents always use `/api/chat`. Until the two `NEXT_PUBLIC_HARNESS_ARN*` va
 | `HARNESS_ARN` | `arn:aws:bedrock-agentcore:eu-north-1:…:harness/…` (agent `general` + fallback) |
 | `HARNESS_ARN_ORDER` | harness ARN for the `order` agent |
 
-**Runtime** (Amplify SSR `/api/chat` — IAM `InvokeAgentRuntime` for `dev` / `req_prio` / `req_plan`):
+**Runtime** (Amplify SSR `/api/chat` — IAM `InvokeAgentRuntime` for `dev` / `req_plan`):
 
 | Key | Example |
 |---|---|
-| `RUNTIME_ARN_REQ_DEV` / `RUNTIME_ARN_REQ_PRIO` / `RUNTIME_ARN_REQ_PLAN` | `arn:aws:bedrock-agentcore:eu-north-1:…:runtime/…` (optional `/runtime-endpoint/DEFAULT` suffix is stripped → qualifier) |
+| `RUNTIME_ARN_REQ_DEV` / `RUNTIME_ARN_REQ_PLAN` | `arn:aws:bedrock-agentcore:eu-north-1:…:runtime/…` (optional `/runtime-endpoint/DEFAULT` suffix is stripped → qualifier) |
 | `HARNESS_REGION` | `eu-north-1` (default) |
 | `BEDROCK_MODEL_ID` | `eu.amazon.nova-pro-v1:0` (default; harness path only) |
 | `AGENT_INVOKE_ROLE_ARN` / `AGENT_INVOKE_EXTERNAL_ID` | cross-account invoke (optional) |

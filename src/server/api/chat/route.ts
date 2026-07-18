@@ -35,7 +35,6 @@ const HARNESS_ENV_BY_AGENT: Record<string, string> = {
 /** Runtime env var per UI agent — IAM InvokeAgentRuntime (dev / prioritizer / planner). */
 const RUNTIME_ENV_BY_AGENT: Record<string, string> = {
   dev: 'RUNTIME_ARN_REQ_DEV',
-  req_prio: 'RUNTIME_ARN_REQ_PRIO',
   req_plan: 'RUNTIME_ARN_REQ_PLAN',
 };
 
@@ -515,9 +514,10 @@ function sseResponse(sseBody: string): Response {
 
 // withAuth verifies the portal Cognito JWT (JWKS + tenant directory lookup)
 // before the agent is ever invoked — the trust boundary for this app, since
-// there is no Lambda behind it. The verified identity (`_user`) isn't needed by
-// the invoke itself; the point is that anonymous callers are rejected.
-export const POST = withAuth(async (req: NextRequest, _user) => {
+// there is no Lambda behind it. Runtime agents need `runtimeUserId` (Cognito
+// `sub`) so AgentCore can mint a workload access token for credentialArn /
+// private git skills.
+export const POST = withAuth(async (req: NextRequest, user) => {
   try {
     let body: { messages?: unknown; sessionId?: string; agentId?: string };
     try {
@@ -546,16 +546,28 @@ export const POST = withAuth(async (req: NextRequest, _user) => {
           return Response.json({ error: msg }, { status: 400 });
         }
 
+        const runtimeUserId = (user?.id || '').trim();
+        if (!runtimeUserId) {
+          return Response.json(
+            { error: 'Authenticated user id required to invoke runtime agents' },
+            { status: 401 }
+          );
+        }
+
         const prompt = lastUserPrompt(typedMessages);
         console.log(
           `[chat] agentId=${agentId} → runtime=${target.agentRuntimeArn.split('/').pop()}` +
-            (target.qualifier ? ` qualifier=${target.qualifier}` : '')
+            (target.qualifier ? ` qualifier=${target.qualifier}` : '') +
+            ` userIdChars=${runtimeUserId.length}`
         );
 
         const command = new InvokeAgentRuntimeCommand({
           agentRuntimeArn: target.agentRuntimeArn,
           qualifier: target.qualifier,
           runtimeSessionId: ensureSessionId(sessionId),
+          // Required for AgentCore Identity credentialArn (e.g. private git skills).
+          // Derived from verified JWT only — never from the request body.
+          runtimeUserId,
           contentType: 'application/json',
           // Prefer event-stream when the agent supports it; JSON still accepted.
           accept: 'text/event-stream, application/json',

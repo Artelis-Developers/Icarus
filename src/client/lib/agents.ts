@@ -4,11 +4,11 @@
  * `general` and `order` use browser → AgentCore HTTPS with Cognito JWT when
  * `NEXT_PUBLIC_HARNESS_ARN` / `NEXT_PUBLIC_HARNESS_ARN_ORDER` are set
  * (see src/client/lib/agentcore.ts); otherwise Amplify `/api/chat` (IAM InvokeHarness).
- * `dev` / `req_prio` / `req_plan` always use `/api/chat` → IAM InvokeAgentRuntime.
+ * `dev` / `req_plan` always use `/api/chat` → IAM InvokeAgentRuntime.
  * Unwired agents show a "coming soon" toast.
  */
 
-export type AgentId = 'general' | 'dev' | 'order' | 'req_prio' | 'req_plan';
+export type AgentId = 'general' | 'dev' | 'order' | 'req_plan';
 
 export interface Agent {
   id: AgentId;
@@ -24,7 +24,6 @@ export const AGENTS: Agent[] = [
   { id: 'general', name: 'General Assistant', desc: 'Everyday help across the group', color: 'var(--accent)', wired: true },
   { id: 'dev', name: 'Request Developer', desc: 'Scope and draft software requests', color: '#ffa94d', wired: true },
   { id: 'order', name: 'Order Agent', desc: 'Order products anywhere', color: '#5c7cfa', wired: true },
-  { id: 'req_prio', name: 'Request Prioritizer', desc: 'Rank and triage incoming requests', color: '#ffd43b', wired: true },
   { id: 'req_plan', name: 'Request Planner', desc: 'Plan and break down requests', color: '#da77f2', wired: true },
 ];
 
@@ -33,7 +32,6 @@ export const DEFAULT_AGENT: AgentId = 'general';
 /** Map legacy persisted ids to current agent ids. */
 const LEGACY_AGENT_IDS: Record<string, AgentId> = {
   hr: 'order',
-  board: 'req_prio',
 };
 
 export function normalizeAgentId(id: string): AgentId {
@@ -64,12 +62,6 @@ export const SUGGESTIONS: Record<AgentId, { title: string; sub: string }[]> = {
     { title: 'Find a product', sub: 'Search for the right product for your client\'s needs.' },
     { title: 'Place an Order', sub: 'Place an order for a product or service.' },
     { title: 'Track an order', sub: 'Check the status of an existing order.' },
-  ],
-  req_prio: [
-    { title: 'Prioritise my backlog', sub: 'Rank these requests by impact and urgency.' },
-    { title: 'Triage a new request', sub: 'Help decide priority for an incoming idea.' },
-    { title: 'Compare two requests', sub: 'Which should we tackle first, and why?' },
-    { title: 'Board-ready summary', sub: 'Summarise requests for a prioritisation meeting.' },
   ],
   req_plan: [
     { title: 'Plan a feature', sub: 'Break a request into phases, tasks, and milestones.' },
