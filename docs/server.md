@@ -6,24 +6,25 @@
 
 | File | Purpose |
 |---|---|
-| `api/chat/route.ts` | **Fallback / local-dev** `POST /api/chat`. Verifies portal JWT (`withAuth`), resolves harness ARN, invokes via IAM `InvokeHarnessCommand`, streams SSE. Production chat prefers browser → AgentCore HTTPS with Cognito JWT (see `src/client/lib/stream.ts` + `agentcore.ts`). |
+| `api/chat/route.ts` | `POST /api/chat`. Verifies portal JWT (`withAuth`). `general` / `order` → IAM `InvokeHarnessCommand`. `dev` / `req_prio` / `req_plan` → IAM `InvokeAgentRuntimeCommand`. Streams SSE. Production chat for `general` / `order` prefers browser → AgentCore JWT (see `src/client/lib/stream.ts` + `agentcore.ts`). |
 
 ## How it works
 
 1. **Auth first.** The handler is wrapped in `withAuth` (from `@artelis/auth/server`), which
-   verifies the portal Cognito JWT (JWKS + tenant-directory lookup) before any harness call.
+   verifies the portal Cognito JWT (JWKS + tenant-directory lookup) before any agent call.
    Anonymous callers get 401. In production, agents `general` and `order` may bypass this route
-   (browser → AgentCore JWT HTTPS via `NEXT_PUBLIC_HARNESS_ARN*`); other agents always use this
-   IAM `/api/chat` path.
+   (browser → AgentCore JWT HTTPS via `NEXT_PUBLIC_HARNESS_ARN*`); `dev` / `req_prio` / `req_plan`
+   always use this IAM `/api/chat` path.
 2. Receives `POST /api/chat` with `{ messages, sessionId, agentId }`.
-3. Resolves the harness ARN for `agentId` (`resolveHarnessArn`) — each agent maps to its own
-   `HARNESS_ARN*` env var; a known agent with no ARN configured → 400 (no silent fallback).
+3. Branches by agent:
+   - **Harness** (`general` / `order`): resolves `HARNESS_ARN*` → `InvokeHarnessCommand` with
+     message history + model config.
+   - **Runtime** (`dev` / `req_prio` / `req_plan`): resolves `RUNTIME_ARN_REQ_*` (strips optional
+     `/runtime-endpoint/{qualifier}`) → `InvokeAgentRuntimeCommand` with `{ prompt }` payload.
 4. Picks credentials (`getClient`): ambient compute-role in the same account, or an assumed
    cross-account role when `AGENT_INVOKE_ROLE_ARN` is set.
-5. Maps messages to AgentCore content-block shape and calls `InvokeHarnessCommand`.
-6. Iterates the async streaming response, emitting SSE events (`data: {...}\n\n`), ending
-   with `data: [DONE]\n\n`.
-7. The harness uses its own configured system prompt — no override.
+5. Buffers the AWS response into SSE events (`data: {...}\n\n`), ending with `data: [DONE]\n\n`.
+6. Persona / tools live in the harness or runtime — no system-prompt override in this route.
 
 ## Environment variables
 
@@ -33,10 +34,18 @@
 |---|---|---|---|
 | `HARNESS_ARN` | ✅ | — | Harness for the `general` agent (also the fallback) |
 | `HARNESS_ARN_ORDER` | for `order` | — | Harness for the `order` agent |
-| `HARNESS_REGION` | — | `eu-north-1` | AWS region of the harnesses |
+| `HARNESS_REGION` | — | `eu-north-1` | AWS region of the harnesses / runtimes |
 | `BEDROCK_MODEL_ID` | — | `eu.amazon.nova-pro-v1:0` | Model the harness uses |
 | `AGENT_INVOKE_ROLE_ARN` | — | (empty = same account) | Cross-account role to assume before invoking |
 | `AGENT_INVOKE_EXTERNAL_ID` | — | `agenticcore-prod` | STS ExternalId for the assume-role |
+
+**Runtime (`InvokeAgentRuntime`):**
+
+| Var | Required | Default | Purpose |
+|---|---|---|---|
+| `RUNTIME_ARN_REQ_DEV` | for `dev` | — | Runtime ARN for Request Developer |
+| `RUNTIME_ARN_REQ_PRIO` | for `req_prio` | — | Runtime ARN for Request Prioritizer |
+| `RUNTIME_ARN_REQ_PLAN` | for `req_plan` | — | Runtime ARN for Request Planner |
 
 **Auth (via `@artelis/auth`):**
 

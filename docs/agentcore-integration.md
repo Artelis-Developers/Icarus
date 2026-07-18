@@ -189,6 +189,9 @@ The app is **multi-agent**: each UI agent maps to its own harness ARN env var
 |---|---|---|---|
 | `HARNESS_ARN` | ✅ | — | Harness for the `general` agent (also the fallback) |
 | `HARNESS_ARN_ORDER` | for `order` | — | Harness for the `order` agent |
+| `RUNTIME_ARN_REQ_DEV` | for `dev` | — | Runtime ARN for Request Developer (`InvokeAgentRuntime`) |
+| `RUNTIME_ARN_REQ_PRIO` | for `req_prio` | — | Runtime ARN for Request Prioritizer |
+| `RUNTIME_ARN_REQ_PLAN` | for `req_plan` | — | Runtime ARN for Request Planner |
 | `HARNESS_REGION` | — | `eu-north-1` | AWS region of the harnesses |
 | `BEDROCK_MODEL_ID` | — | `eu.amazon.nova-pro-v1:0` | Model the harness uses |
 | `AGENT_INVOKE_ROLE_ARN` | — | (empty = same account) | Cross-account role to assume before invoking |
@@ -239,10 +242,12 @@ Full step-by-step provisioning: `deploy.md`. One-shot automation: `infra/bootstr
   `send()` optimistically adds the user message + an empty assistant placeholder, then calls
   `streamChat()` and appends streamed chunks.
 - `src/client/lib/stream.ts` — SSE fetch client. Reusable as-is.
-- `src/client/lib/agents.ts` — the agent roster (`AGENTS`) and starter suggestions. Two
-  agents ship, **all `wired: true`**: `general`, `order`.
-  `normalizeAgentId` maps the legacy id `hr` → `order`. An agent with
+- `src/client/lib/agents.ts` — the agent roster (`AGENTS`) and starter suggestions. Five
+  agents ship, **all `wired: true`**: `general`, `dev`, `order`, `req_prio`, `req_plan`.
+  `normalizeAgentId` maps legacy ids (`hr` → `order`, `board` → `req_prio`). An agent with
   `wired: false` shows a "coming soon" toast and does not call the backend.
+  `general` / `order` use JWT InvokeHarness when `NEXT_PUBLIC_HARNESS_ARN*` are set;
+  `dev` / `req_prio` / `req_plan` use `/api/chat` → IAM `InvokeAgentRuntime`.
 
 ---
 

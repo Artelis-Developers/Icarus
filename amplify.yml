@@ -16,6 +16,9 @@ frontend:
         - echo "BEDROCK_MODEL_ID=$BEDROCK_MODEL_ID" >> .env.production
         - echo "HARNESS_ARN=$HARNESS_ARN" >> .env.production
         - echo "HARNESS_ARN_ORDER=$HARNESS_ARN_ORDER" >> .env.production
+        - echo "RUNTIME_ARN_REQ_DEV=$RUNTIME_ARN_REQ_DEV" >> .env.production
+        - echo "RUNTIME_ARN_REQ_PRIO=$RUNTIME_ARN_REQ_PRIO" >> .env.production
+        - echo "RUNTIME_ARN_REQ_PLAN=$RUNTIME_ARN_REQ_PLAN" >> .env.production
         # JWT InvokeHarness (general + order). Harness ARNs (…:harness/…), not runtime ARNs.
         - |
           REGION="${NEXT_PUBLIC_AGENTCORE_REGION:-${HARNESS_REGION:-eu-north-1}}"

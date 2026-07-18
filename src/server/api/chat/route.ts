@@ -1,5 +1,9 @@
 import { NextRequest } from 'next/server';
-import { BedrockAgentCoreClient, InvokeHarnessCommand } from '@aws-sdk/client-bedrock-agentcore';
+import {
+  BedrockAgentCoreClient,
+  InvokeAgentRuntimeCommand,
+  InvokeHarnessCommand,
+} from '@aws-sdk/client-bedrock-agentcore';
 import { fromTemporaryCredentials } from '@aws-sdk/credential-providers';
 import { withAuth } from '@artelis/auth/server';
 
@@ -22,10 +26,17 @@ const AMPLIFY_SOFT_TIMEOUT_MS = 25_000;
 const AGENT_INVOKE_ROLE_ARN = process.env.AGENT_INVOKE_ROLE_ARN || '';
 const AGENT_INVOKE_EXTERNAL_ID = process.env.AGENT_INVOKE_EXTERNAL_ID || 'agenticcore-prod';
 
-/** Env var name per UI agent id — resolved at request time (not module load). */
+/** Harness env var per UI agent — IAM InvokeHarness (general / order fallback). */
 const HARNESS_ENV_BY_AGENT: Record<string, string> = {
   general: 'HARNESS_ARN',
   order: 'HARNESS_ARN_ORDER',
+};
+
+/** Runtime env var per UI agent — IAM InvokeAgentRuntime (dev / prioritizer / planner). */
+const RUNTIME_ENV_BY_AGENT: Record<string, string> = {
+  dev: 'RUNTIME_ARN_REQ_DEV',
+  req_prio: 'RUNTIME_ARN_REQ_PRIO',
+  req_plan: 'RUNTIME_ARN_REQ_PLAN',
 };
 
 function getClient() {
@@ -45,6 +56,10 @@ function getClient() {
       },
     }),
   });
+}
+
+function isRuntimeAgent(agentId?: string): boolean {
+  return Boolean(agentId && RUNTIME_ENV_BY_AGENT[agentId]);
 }
 
 function resolveHarnessArn(agentId?: string): string {
@@ -68,11 +83,57 @@ function resolveHarnessArn(agentId?: string): string {
   return fallback;
 }
 
+/**
+ * Console sometimes copies ARNs with `/runtime-endpoint/DEFAULT` appended.
+ * InvokeAgentRuntime wants the base `…:runtime/{id}` plus a separate `qualifier`.
+ */
+function parseRuntimeArn(raw: string): { agentRuntimeArn: string; qualifier?: string } {
+  const trimmed = raw.trim();
+  const marker = '/runtime-endpoint/';
+  const idx = trimmed.indexOf(marker);
+  if (idx === -1) {
+    const qualifier = process.env.AGENTCORE_QUALIFIER?.trim() || undefined;
+    return { agentRuntimeArn: trimmed, qualifier };
+  }
+  const agentRuntimeArn = trimmed.slice(0, idx);
+  const qualifier = trimmed.slice(idx + marker.length).trim() || 'DEFAULT';
+  return { agentRuntimeArn, qualifier };
+}
+
+function resolveRuntimeTarget(agentId?: string): { agentRuntimeArn: string; qualifier?: string } {
+  const id = agentId || '';
+  const envKey = RUNTIME_ENV_BY_AGENT[id];
+  if (!envKey) {
+    throw new Error(`No runtime mapping for agent "${id}"`);
+  }
+  const raw = process.env[envKey] || '';
+  if (!raw) {
+    throw new Error(`Runtime ARN not configured for agent "${id}" (set ${envKey})`);
+  }
+  const parsed = parseRuntimeArn(raw);
+  if (!parsed.agentRuntimeArn.includes(':runtime/')) {
+    throw new Error(
+      `Expected a runtime ARN (…:runtime/…) for agent "${id}", got: ${parsed.agentRuntimeArn}`
+    );
+  }
+  return parsed;
+}
+
 /** AgentCore requires runtimeSessionId length >= 33. */
 function ensureSessionId(sessionId?: string): string {
   const sid = sessionId || crypto.randomUUID();
   if (sid.length >= 33) return sid;
   return `${sid}-${crypto.randomUUID()}`;
+}
+
+function lastUserPrompt(messages: { role: string; content: string }[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m?.role === 'user' && typeof m.content === 'string' && m.content.trim()) {
+      return m.content.trim();
+    }
+  }
+  throw new Error('No user message to send');
 }
 
 /** Pull a useful message from AWS SDK / generic errors for logs + the client. */
@@ -94,8 +155,8 @@ function formatInvokeError(err: unknown): string {
   const name = err.name || '';
   if (name === 'AbortError' || /aborted/i.test(err.message)) {
     return (
-      'Harness timed out (~25s). Amplify SSR kills requests around 30s — ' +
-      'agents that use the browser tool often exceed this. ' +
+      'Agent timed out (~25s). Amplify SSR kills requests around 30s — ' +
+      'agents that use tools often exceed this. ' +
       parts.join(' — ')
     );
   }
@@ -205,10 +266,191 @@ async function collectHarnessSse(
   return lines.join('');
 }
 
+/** Pull assistant text out of heterogeneous runtime JSON payloads. */
+function extractRuntimeText(data: unknown): string | null {
+  if (data == null) return null;
+  if (typeof data === 'string') {
+    const t = data.trim();
+    if (!t || t === '[DONE]') return null;
+    try {
+      return extractRuntimeText(JSON.parse(t));
+    } catch {
+      return t;
+    }
+  }
+  if (typeof data !== 'object') return null;
+
+  const obj = data as Record<string, unknown>;
+  for (const key of ['text', 'message', 'content', 'output', 'response', 'result', 'answer']) {
+    const v = obj[key];
+    if (typeof v === 'string' && v.trim()) return v;
+  }
+
+  if (typeof obj.bytes === 'string' && obj.bytes) {
+    try {
+      return extractRuntimeText(Buffer.from(obj.bytes, 'base64').toString('utf8'));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const delta = (obj as { contentBlockDelta?: { delta?: { text?: string } } }).contentBlockDelta
+    ?.delta?.text;
+  if (delta) return delta;
+
+  if (Array.isArray(obj.messages)) {
+    for (let i = obj.messages.length - 1; i >= 0; i--) {
+      const msg = obj.messages[i] as { role?: string; content?: unknown };
+      if (msg?.role && msg.role !== 'assistant') continue;
+      const nested = extractRuntimeText(msg.content);
+      if (nested) return nested;
+    }
+  }
+
+  if (Array.isArray(obj.content)) {
+    const parts: string[] = [];
+    for (const block of obj.content) {
+      if (typeof block === 'string') parts.push(block);
+      else if (block && typeof block === 'object' && typeof (block as { text?: string }).text === 'string') {
+        parts.push((block as { text: string }).text);
+      }
+    }
+    if (parts.length) return parts.join('');
+  }
+
+  return null;
+}
+
+/**
+ * Buffer InvokeAgentRuntime body into our SSE shape.
+ * Runtime agents return a blob (JSON / SSE / plain text), not the harness event stream.
+ */
+async function collectRuntimeSse(
+  command: InvokeAgentRuntimeCommand,
+  agentId: string | undefined,
+  signal: AbortSignal
+): Promise<string> {
+  const client = getClient();
+  const response = await client.send(command, { abortSignal: signal });
+
+  if (!response.response) {
+    throw new Error('Runtime returned no response body (empty InvokeAgentRuntime response)');
+  }
+
+  if (signal.aborted) {
+    const abortErr = new Error('Runtime timed out');
+    abortErr.name = 'AbortError';
+    throw abortErr;
+  }
+
+  const body =
+    typeof (response.response as { transformToString?: () => Promise<string> }).transformToString ===
+    'function'
+      ? await (response.response as { transformToString: () => Promise<string> }).transformToString()
+      : await new Response(response.response as BodyInit).text();
+
+  const lines: string[] = [];
+  const trimmed = (body || '').trim();
+
+  if (!trimmed) {
+    lines.push(sseLine({ type: 'error', message: 'Runtime returned an empty body' }));
+    lines.push('data: [DONE]\n\n');
+    return lines.join('');
+  }
+
+  // Passthrough / re-emit if the agent already spoke SSE
+  if (trimmed.includes('data:')) {
+    let emitted = false;
+    for (const rawLine of trimmed.split(/\r?\n/)) {
+      if (!rawLine.startsWith('data:')) continue;
+      const payload = rawLine.slice(5).trim();
+      if (!payload || payload === '[DONE]') continue;
+      try {
+        const parsed = JSON.parse(payload) as Record<string, unknown>;
+        if (parsed.type === 'text' && typeof parsed.text === 'string') {
+          lines.push(sseLine({ type: 'text', text: parsed.text }));
+          emitted = true;
+          continue;
+        }
+        if (parsed.type === 'error') {
+          lines.push(sseLine({ type: 'error', message: parsed.message ?? 'Runtime error' }));
+          emitted = true;
+          continue;
+        }
+        const text = extractRuntimeText(parsed);
+        if (text) {
+          lines.push(sseLine({ type: 'text', text }));
+          emitted = true;
+        }
+      } catch {
+        lines.push(sseLine({ type: 'text', text: payload }));
+        emitted = true;
+      }
+    }
+    if (emitted) {
+      lines.push(sseLine({ type: 'stop', reason: 'end_turn' }));
+      lines.push('data: [DONE]\n\n');
+      return lines.join('');
+    }
+  }
+
+  // NDJSON
+  if (trimmed.includes('\n') && trimmed.split('\n').every((l) => !l.trim() || l.trim().startsWith('{'))) {
+    let emitted = false;
+    for (const line of trimmed.split(/\r?\n/)) {
+      const t = line.trim();
+      if (!t) continue;
+      try {
+        const text = extractRuntimeText(JSON.parse(t));
+        if (text) {
+          lines.push(sseLine({ type: 'text', text }));
+          emitted = true;
+        }
+      } catch {
+        /* ignore bad line */
+      }
+    }
+    if (emitted) {
+      lines.push(sseLine({ type: 'stop', reason: 'end_turn' }));
+      lines.push('data: [DONE]\n\n');
+      return lines.join('');
+    }
+  }
+
+  try {
+    const text = extractRuntimeText(JSON.parse(trimmed));
+    if (text) {
+      lines.push(sseLine({ type: 'text', text }));
+      lines.push(sseLine({ type: 'stop', reason: 'end_turn' }));
+      lines.push('data: [DONE]\n\n');
+      return lines.join('');
+    }
+  } catch {
+    /* plain text */
+  }
+
+  console.log(
+    `[chat] runtime agentId=${agentId ?? '(none)'} contentType=${response.contentType ?? '?'} bodyChars=${trimmed.length}`
+  );
+  lines.push(sseLine({ type: 'text', text: trimmed }));
+  lines.push(sseLine({ type: 'stop', reason: 'end_turn' }));
+  lines.push('data: [DONE]\n\n');
+  return lines.join('');
+}
+
+function sseResponse(sseBody: string): Response {
+  return new Response(sseBody, {
+    headers: {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache',
+    },
+  });
+}
+
 // withAuth verifies the portal Cognito JWT (JWKS + tenant directory lookup)
-// before the harness is ever invoked — the trust boundary for this app, since
+// before the agent is ever invoked — the trust boundary for this app, since
 // there is no Lambda behind it. The verified identity (`_user`) isn't needed by
-// the harness call itself; the point is that anonymous callers are rejected.
+// the invoke itself; the point is that anonymous callers are rejected.
 export const POST = withAuth(async (req: NextRequest, _user) => {
   try {
     let body: { messages?: unknown; sessionId?: string; agentId?: string };
@@ -224,48 +466,72 @@ export const POST = withAuth(async (req: NextRequest, _user) => {
       return Response.json({ error: 'messages array required' }, { status: 400 });
     }
 
-    let harnessArn: string;
-    try {
-      harnessArn = resolveHarnessArn(agentId);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return Response.json({ error: msg }, { status: 400 });
-    }
-
-    console.log(
-      `[chat] agentId=${agentId ?? '(none)'} → harness=${harnessArn.split('/').pop()}`
-    );
-
-    const harnessMessages = messages.map((m: { role: string; content: string }) => ({
-      role: (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
-      content: [{ text: m.content }],
-    }));
-
-    const command = new InvokeHarnessCommand({
-      harnessArn,
-      runtimeSessionId: ensureSessionId(sessionId),
-      messages: harnessMessages,
-      model: {
-        bedrockModelConfig: {
-          modelId: MODEL_ID,
-        },
-      },
-    });
-
+    const typedMessages = messages as { role: string; content: string }[];
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), AMPLIFY_SOFT_TIMEOUT_MS);
 
     try {
-      const sseBody = await collectHarnessSse(command, agentId, ac.signal);
-      return new Response(sseBody, {
-        headers: {
-          'Content-Type': 'text/event-stream; charset=utf-8',
-          'Cache-Control': 'no-cache',
+      if (isRuntimeAgent(agentId)) {
+        let target: { agentRuntimeArn: string; qualifier?: string };
+        try {
+          target = resolveRuntimeTarget(agentId);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return Response.json({ error: msg }, { status: 400 });
+        }
+
+        const prompt = lastUserPrompt(typedMessages);
+        console.log(
+          `[chat] agentId=${agentId} → runtime=${target.agentRuntimeArn.split('/').pop()}` +
+            (target.qualifier ? ` qualifier=${target.qualifier}` : '')
+        );
+
+        const command = new InvokeAgentRuntimeCommand({
+          agentRuntimeArn: target.agentRuntimeArn,
+          qualifier: target.qualifier,
+          runtimeSessionId: ensureSessionId(sessionId),
+          contentType: 'application/json',
+          accept: 'application/json',
+          payload: new TextEncoder().encode(JSON.stringify({ prompt })),
+        });
+
+        const sseBody = await collectRuntimeSse(command, agentId, ac.signal);
+        return sseResponse(sseBody);
+      }
+
+      let harnessArn: string;
+      try {
+        harnessArn = resolveHarnessArn(agentId);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return Response.json({ error: msg }, { status: 400 });
+      }
+
+      console.log(
+        `[chat] agentId=${agentId ?? '(none)'} → harness=${harnessArn.split('/').pop()}`
+      );
+
+      const harnessMessages = typedMessages.map((m) => ({
+        role: (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
+        content: [{ text: m.content }],
+      }));
+
+      const command = new InvokeHarnessCommand({
+        harnessArn,
+        runtimeSessionId: ensureSessionId(sessionId),
+        messages: harnessMessages,
+        model: {
+          bedrockModelConfig: {
+            modelId: MODEL_ID,
+          },
         },
       });
+
+      const sseBody = await collectHarnessSse(command, agentId, ac.signal);
+      return sseResponse(sseBody);
     } catch (err) {
       const msg = formatInvokeError(err);
-      console.error(`[chat] harness invoke failed agentId=${agentId ?? '(none)'}:`, err);
+      console.error(`[chat] invoke failed agentId=${agentId ?? '(none)'}:`, err);
       const aborted =
         (err instanceof Error && err.name === 'AbortError') ||
         (err instanceof Error && /aborted|timed out/i.test(err.message));
