@@ -28,6 +28,14 @@ export function AgentIcon({ agent, size = 18 }: Props) {
           <path d="M3 4h2l2.4 11.2a2 2 0 0 0 2 1.6h8.8a2 2 0 0 0 2-1.6L22 8H6" />
         </svg>
       );
+    case 'neworder':
+      return (
+        <svg {...svgBase} {...dims}>
+          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+          <path d="M3.27 6.96 12 12.01l8.73-5.05" />
+          <path d="M12 22.08V12" />
+        </svg>
+      );
     // Parked with agents.ts: 'dev' | 'req_plan'
     case 'general':
     default:

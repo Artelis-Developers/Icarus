@@ -16,7 +16,7 @@
 import type { AgentId } from '@/client/lib/agents';
 
 /** Agents that use inbound JWT HTTPS instead of Amplify SSR. */
-const JWT_INVOKE_AGENTS = new Set<AgentId>(['general', 'order']);
+const JWT_INVOKE_AGENTS = new Set<AgentId>(['general', 'order', 'neworder']);
 
 export function agentcoreRegion(): string {
   return (
@@ -42,6 +42,9 @@ export function resolveJwtInvokeArn(agentId: string): string {
 
   if (id === 'general') {
     return process.env.NEXT_PUBLIC_HARNESS_ARN?.trim() || '';
+  }
+  if (id === 'neworder') {
+    return process.env.NEXT_PUBLIC_HARNESS_ARN_NEWORDER?.trim() || '';
   }
   if (id === 'order') {
     return process.env.NEXT_PUBLIC_HARNESS_ARN_ORDER?.trim() || '';
