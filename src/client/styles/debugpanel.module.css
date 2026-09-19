@@ -208,6 +208,7 @@
 .request { border-left-color: #5c7cfa; }
 .response { border-left-color: #5c7cfa; }
 .chunk { border-left-color: var(--border-strong); }
+.frame { border-left-color: #8b7cf6; }
 .delta { border-left-color: var(--accent); }
 .event { border-left-color: #d9a441; }
 .error { border-left-color: var(--danger); }

@@ -22,6 +22,11 @@ import {
   describeToken,
   headersToObject,
 } from '@/client/lib/debug-bus';
+import {
+  EventStreamDecoder,
+  frameLabel,
+  framePayloadText,
+} from '@/client/lib/eventstream';
 
 /**
  * Resolve the portal Cognito access token for the Authorization header, trying
@@ -273,6 +278,18 @@ async function readAwsEventStream(
   let buffer = '';
   let gotText = false;
 
+  // Debug-only: the same bytes, read as real frames instead of as text.
+  const frames = new EventStreamDecoder();
+  const captureFrames = (bytes: Uint8Array) => {
+    for (const frame of frames.push(bytes)) {
+      debugEmit('frame', frameLabel(frame), {
+        bytes: frame.byteLength,
+        detail: frame.headers,
+        text: framePayloadText(frame),
+      });
+    }
+  };
+
   /** Bytes misread as latin1 → proper UTF-8 (fallback if a chunk was already mojibake). */
   const asUtf8 = (s: string): string => {
     if (!/[\u0080-\u00ff]/.test(s)) return s;
@@ -351,9 +368,9 @@ async function readAwsEventStream(
     const piece = decoder.decode(value, { stream: true });
     debugEmit('chunk', `event-stream chunk · ${value.length} B`, {
       bytes: value.length,
-      text: piece,
       hex: bytesToHex(value),
     });
+    captureFrames(value);
     buffer += piece;
     emitDeltaTexts();
   }
@@ -368,7 +385,9 @@ async function readAwsEventStream(
     debugEmit('error', 'stream ended with no delta.text');
     onError('Agent stream finished with no text (event-stream parse found no delta.text)');
   }
-  debugEmit('done', 'event-stream closed', { detail: { gotText } });
+  debugEmit('done', 'event-stream closed', {
+    detail: { gotText, frameDecoderDesynced: frames.desynced },
+  });
   onDone();
 }
 

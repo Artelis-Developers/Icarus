@@ -15,6 +15,7 @@ export type DebugKind =
   | 'request'
   | 'response'
   | 'chunk' // raw bytes off the socket
+  | 'frame' // one decoded event-stream message (headers + payload)
   | 'delta' // text we managed to parse out of a chunk
   | 'event' // anything else we recognised in the stream
   | 'error'
