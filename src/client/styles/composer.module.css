@@ -90,6 +90,15 @@
   background: var(--surface-alt);
 }
 
+/* Stop replaces send while a turn streams — same footprint, quieter fill
+   so it reads as an interrupt rather than the primary action. */
+.stopBtn {
+  color: var(--text);
+  background: var(--surface-alt);
+  border: 1px solid var(--border-hover);
+}
+.stopBtn:hover { background: var(--surface); border-color: var(--agent); color: var(--agent); }
+
 .disclaimer {
   text-align: center;
   font-size: 11px;

@@ -152,10 +152,15 @@
 
 .dt {
   flex-shrink: 0;
-  width: 58px;
+  width: 96px;
   color: var(--text-ghost);
   text-align: right;
 }
+
+/* Second timestamp of a folded run — dimmer, it is the tail not the event. */
+.range { color: var(--border-hover); }
+
+.multiplier { color: var(--agent); font-weight: 500; }
 
 .kind {
   flex-shrink: 0;
@@ -175,7 +180,7 @@
 .bytes { flex-shrink: 0; color: var(--text-ghost); }
 .caret { flex-shrink: 0; color: var(--text-faint); width: 10px; }
 
-.body { padding: 2px 7px 8px 65px; }
+.body { padding: 2px 7px 8px 103px; }
 
 .subLabel {
   margin: 6px 0 2px;

@@ -29,6 +29,7 @@ export default function ChatPage() {
     scrollRef,
     inputRef,
     send,
+    stop,
     newChat,
     openConversation,
     selectAgent,
@@ -92,6 +93,7 @@ export default function ChatPage() {
           onChange={setInput}
           onSubmit={() => send()}
           disabled={sending}
+          onStop={stop}
           agentId={currentAgentId}
           inputRef={inputRef}
           onWip={wip}

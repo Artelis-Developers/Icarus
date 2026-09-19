@@ -9,13 +9,24 @@ interface Props {
   value: string;
   onChange: (v: string) => void;
   onSubmit: () => void;
+  /** True while a turn is streaming — the send button becomes stop. */
   disabled: boolean;
+  onStop: () => void;
   agentId: AgentId;
   inputRef: RefObject<HTMLTextAreaElement>;
   onWip: (label: string) => void;
 }
 
-export function Composer({ value, onChange, onSubmit, disabled, agentId, inputRef, onWip }: Props) {
+export function Composer({
+  value,
+  onChange,
+  onSubmit,
+  disabled,
+  onStop,
+  agentId,
+  inputRef,
+  onWip,
+}: Props) {
   const agent = agentById(agentId);
   const sendDisabled = disabled || !value.trim();
 
@@ -31,6 +42,11 @@ export function Composer({ value, onChange, onSubmit, disabled, agentId, inputRe
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       onSubmit();
+    }
+    // Escape cancels the turn, same as pressing stop.
+    if (e.key === 'Escape' && disabled) {
+      e.preventDefault();
+      onStop();
     }
   };
 
@@ -65,12 +81,30 @@ export function Composer({ value, onChange, onSubmit, disabled, agentId, inputRe
                 <path d="M12 19v3" />
               </svg>
             </button>
-            <button className={styles.sendBtn} onClick={onSubmit} disabled={sendDisabled} aria-label="Send">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M22 2L11 13" />
-                <path d="M22 2l-7 20-4-9-9-4z" />
-              </svg>
-            </button>
+            {disabled ? (
+              <button
+                className={`${styles.sendBtn} ${styles.stopBtn}`}
+                onClick={onStop}
+                title="Stop generating (Esc)"
+                aria-label="Stop generating"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <rect x="7" y="7" width="10" height="10" rx="1.5" />
+                </svg>
+              </button>
+            ) : (
+              <button
+                className={styles.sendBtn}
+                onClick={onSubmit}
+                disabled={sendDisabled}
+                aria-label="Send"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M22 2L11 13" />
+                  <path d="M22 2l-7 20-4-9-9-4z" />
+                </svg>
+              </button>
+            )}
           </div>
         </div>
         <div className={styles.disclaimer}>

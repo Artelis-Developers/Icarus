@@ -4,9 +4,14 @@
  * Raw transport inspector.
  *
  * Shows everything `src/client/lib/stream.ts` sees on the wire — request target,
- * token claims, every response header, every raw byte chunk (text + hex) and
- * every parsed delta — with no filtering applied at capture time. Read-only and
- * in-memory: closing the tab loses it, nothing is stored or sent anywhere.
+ * token claims, every response header, every decoded event-stream frame and
+ * every parsed delta. Read-only and in-memory: closing the tab loses it, nothing
+ * is stored or sent anywhere.
+ *
+ * Capture is lossless; the folding below is purely a view. A response arrives as
+ * dozens of socket reads and dozens of frames, so by default rows of the same
+ * kind within one turn collapse into a single expandable row. Turn "fold" off
+ * for the strict chronological list.
  *
  * The chat itself is untouched; this only reads the capture bus.
  */
@@ -41,13 +46,14 @@ const KINDS: DebugKind[] = [
 ];
 
 /** Kinds that are worth seeing opened — the noisy ones stay folded. */
-const OPEN_BY_DEFAULT = new Set<DebugKind>([
-  'invoke',
-  'request',
-  'response',
-  'frame',
-  'error',
-]);
+const OPEN_BY_DEFAULT = new Set<DebugKind>(['invoke', 'request', 'response', 'error']);
+
+/**
+ * Kinds that repeat many times per turn. A socket read boundary (`chunk`) is
+ * arbitrary and a long run of `contentBlockDelta` frames is just the model
+ * streaming, so these fold; anything else stays one row per event.
+ */
+const FOLDABLE = new Set<DebugKind>(['chunk', 'frame', 'delta']);
 
 /**
  * Binary framing decoded as text gives control bytes (the length prefixes) and
@@ -64,6 +70,61 @@ function printable(text: string): string {
     out += isControl || isC1 || code === 0xfffd ? '·' : ch;
   }
   return out;
+}
+
+/** Frames fold per event-type, so `contentBlockDelta` never swallows `metadata`. */
+function foldKey(entry: DebugEntry): string {
+  return `${entry.run}|${entry.kind}|${entry.kind === 'frame' ? entry.label : ''}`;
+}
+
+/**
+ * Fold by key within a turn, keeping first-appearance order. Deliberately not
+ * "consecutive only": the transport interleaves chunk/frame/delta, so adjacency
+ * folding would leave dozens of two-row groups. Each member keeps its own
+ * timestamp, so the ordering stays visible inside the group.
+ */
+function foldEntries(entries: DebugEntry[], enabled: boolean): DebugEntry[][] {
+  if (!enabled) return entries.map((e) => [e]);
+
+  const groups: DebugEntry[][] = [];
+  const index = new Map<string, DebugEntry[]>();
+
+  for (const entry of entries) {
+    if (!FOLDABLE.has(entry.kind)) {
+      groups.push([entry]);
+      continue;
+    }
+    const key = foldKey(entry);
+    const existing = index.get(key);
+    if (existing) {
+      existing.push(entry);
+    } else {
+      const group = [entry];
+      index.set(key, group);
+      groups.push(group);
+    }
+  }
+
+  return groups;
+}
+
+function Body({ entry }: { entry: DebugEntry }) {
+  return (
+    <>
+      {entry.detail !== undefined && (
+        <pre className={styles.pre}>{JSON.stringify(entry.detail, null, 2)}</pre>
+      )}
+      {entry.text !== undefined && entry.text !== '' && (
+        <pre className={styles.pre}>{printable(entry.text)}</pre>
+      )}
+      {entry.hex && (
+        <>
+          <div className={styles.subLabel}>hex</div>
+          <pre className={`${styles.pre} ${styles.hex}`}>{entry.hex}</pre>
+        </>
+      )}
+    </>
+  );
 }
 
 function Row({ entry, defaultOpen }: { entry: DebugEntry; defaultOpen: boolean }) {
@@ -87,16 +148,57 @@ function Row({ entry, defaultOpen }: { entry: DebugEntry; defaultOpen: boolean }
 
       {open && hasBody && (
         <div className={styles.body}>
-          {entry.detail !== undefined && (
-            <pre className={styles.pre}>{JSON.stringify(entry.detail, null, 2)}</pre>
-          )}
-          {entry.text !== undefined && entry.text !== '' && (
-            <pre className={styles.pre}>{printable(entry.text)}</pre>
-          )}
-          {entry.hex && (
+          <Body entry={entry} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A folded run: headline numbers, the joined text, then the arrival timeline. */
+function GroupRow({ entries }: { entries: DebugEntry[] }) {
+  const [open, setOpen] = useState(false);
+  const first = entries[0];
+  const last = entries[entries.length - 1];
+  const totalBytes = entries.reduce((sum, e) => sum + (e.bytes ?? 0), 0);
+
+  // Joined because that is what the run *means*: the reassembled text, or the
+  // payloads back to back. Each part keeps its own timing in the list below.
+  const joined = entries
+    .map((e) => e.text ?? '')
+    .filter(Boolean)
+    .join(first.kind === 'delta' ? '' : '\n');
+
+  const label = first.kind === 'frame' ? first.label : first.kind;
+
+  return (
+    <div className={`${styles.row} ${styles[first.kind] ?? ''}`}>
+      <button className={styles.rowHead} onClick={() => setOpen((v) => !v)} type="button">
+        <span className={styles.dt}>
+          +{first.dt}
+          <span className={styles.range}>–{last.dt}</span>ms
+        </span>
+        <span className={styles.kind}>{first.kind}</span>
+        <span className={styles.label}>
+          <span className={styles.multiplier}>{entries.length}×</span> {label}
+        </span>
+        {totalBytes > 0 && <span className={styles.bytes}>{totalBytes} B</span>}
+        <span className={styles.caret}>{open ? '−' : '+'}</span>
+      </button>
+
+      {open && (
+        <div className={styles.body}>
+          {joined && <pre className={styles.pre}>{printable(joined)}</pre>}
+
+          <div className={styles.subLabel}>timeline</div>
+          <pre className={`${styles.pre} ${styles.hex}`}>
+            {entries.map((e) => `+${String(e.dt).padStart(6)}ms  ${e.bytes ?? 0} B`).join('\n')}
+          </pre>
+
+          {first.hex && (
             <>
-              <div className={styles.subLabel}>hex</div>
-              <pre className={`${styles.pre} ${styles.hex}`}>{entry.hex}</pre>
+              <div className={styles.subLabel}>hex · first only</div>
+              <pre className={`${styles.pre} ${styles.hex}`}>{first.hex}</pre>
             </>
           )}
         </div>
@@ -110,6 +212,7 @@ export function DebugPanel({ open, onClose }: Props) {
   const [query, setQuery] = useState('');
   const [muted, setMuted] = useState<Set<DebugKind>>(new Set());
   const [follow, setFollow] = useState(true);
+  const [fold, setFold] = useState(true);
   const [copied, setCopied] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -124,6 +227,8 @@ export function DebugPanel({ open, onClose }: Props) {
       return hay.includes(q);
     });
   }, [entries, query, muted]);
+
+  const groups = useMemo(() => foldEntries(visible, fold), [visible, fold]);
 
   useEffect(() => {
     if (open && follow) endRef.current?.scrollIntoView({ block: 'end' });
@@ -141,6 +246,7 @@ export function DebugPanel({ open, onClose }: Props) {
 
   const copyAll = async () => {
     try {
+      // Always the unfolded entries — folding is for reading, not for export.
       await navigator.clipboard.writeText(JSON.stringify(visible, null, 2));
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
@@ -175,9 +281,13 @@ export function DebugPanel({ open, onClose }: Props) {
           className={styles.search}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="filter — usage, token, x-amzn, delta…"
+          placeholder="filter — usage, metadata, token, x-amzn…"
           spellCheck={false}
         />
+        <label className={styles.follow}>
+          <input type="checkbox" checked={fold} onChange={(e) => setFold(e.target.checked)} />
+          fold
+        </label>
         <label className={styles.follow}>
           <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />
           follow
@@ -198,18 +308,23 @@ export function DebugPanel({ open, onClose }: Props) {
       </div>
 
       <div className={styles.list}>
-        {visible.length === 0 && (
+        {groups.length === 0 && (
           <p className={styles.empty}>
             Nothing captured yet. Send a message — every byte of the response lands here.
           </p>
         )}
-        {visible.map((entry) => {
-          const newRun = entry.run !== lastRun;
-          lastRun = entry.run;
+        {groups.map((group) => {
+          const head = group[0];
+          const newRun = head.run !== lastRun;
+          lastRun = head.run;
           return (
-            <div key={entry.id}>
-              {newRun && <div className={styles.runSep}>turn {entry.run}</div>}
-              <Row entry={entry} defaultOpen={OPEN_BY_DEFAULT.has(entry.kind)} />
+            <div key={head.id}>
+              {newRun && <div className={styles.runSep}>turn {head.run}</div>}
+              {group.length === 1 ? (
+                <Row entry={head} defaultOpen={OPEN_BY_DEFAULT.has(head.kind)} />
+              ) : (
+                <GroupRow entries={group} />
+              )}
             </div>
           );
         })}

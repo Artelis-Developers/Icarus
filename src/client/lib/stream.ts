@@ -57,6 +57,14 @@ function resolveAccessToken(): string | null {
   }
 }
 
+/**
+ * True when a rejection is the user pressing stop rather than a real failure.
+ * fetch() and reader.read() both reject with AbortError once the signal fires.
+ */
+function isAbort(err: unknown, signal?: AbortSignal): boolean {
+  return Boolean(signal?.aborted) || (err instanceof Error && err.name === 'AbortError');
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
@@ -210,14 +218,26 @@ async function readSseStream(
   onText: (chunk: string) => void,
   onError: (msg: string) => void,
   onDone: () => void,
-  onStatus?: (msg: string) => void
+  onStatus?: (msg: string) => void,
+  signal?: AbortSignal
 ): Promise<void> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
 
   while (true) {
-    const { done, value } = await reader.read();
+    let chunk: ReadableStreamReadResult<Uint8Array>;
+    try {
+      chunk = await reader.read();
+    } catch (err) {
+      if (isAbort(err, signal)) {
+        debugEmit('done', 'cancelled by user');
+        onDone();
+        return;
+      }
+      throw err;
+    }
+    const { done, value } = chunk;
     if (done) break;
 
     const piece = decoder.decode(value, { stream: true });
@@ -271,7 +291,8 @@ async function readAwsEventStream(
   onText: (chunk: string) => void,
   onError: (msg: string) => void,
   onDone: () => void,
-  onStatus?: (msg: string) => void
+  onStatus?: (msg: string) => void,
+  signal?: AbortSignal
 ): Promise<void> {
   const reader = body.getReader();
   const decoder = new TextDecoder('utf-8');
@@ -362,7 +383,19 @@ async function readAwsEventStream(
   };
 
   while (true) {
-    const { done, value } = await reader.read();
+    let chunk: ReadableStreamReadResult<Uint8Array>;
+    try {
+      chunk = await reader.read();
+    } catch (err) {
+      if (isAbort(err, signal)) {
+        // Keep whatever already streamed — the bubble stays, just stops growing.
+        debugEmit('done', 'cancelled by user', { detail: { gotText } });
+        onDone();
+        return;
+      }
+      throw err;
+    }
+    const { done, value } = chunk;
     if (done) break;
     if (!value?.length) continue;
     const piece = decoder.decode(value, { stream: true });
@@ -380,7 +413,7 @@ async function readAwsEventStream(
   buffer += tail;
   emitDeltaTexts();
 
-  if (!gotText) {
+  if (!gotText && !signal?.aborted) {
     console.warn('[chat] InvokeHarness stream ended with no text deltas');
     debugEmit('error', 'stream ended with no delta.text');
     onError('Agent stream finished with no text (event-stream parse found no delta.text)');
@@ -399,7 +432,8 @@ async function streamViaAgentcoreJwt(
   onText: (chunk: string) => void,
   onError: (msg: string) => void,
   onDone: () => void,
-  onStatus?: (msg: string) => void
+  onStatus?: (msg: string) => void,
+  signal?: AbortSignal
 ): Promise<void> {
   const harnessArn = resolveJwtInvokeArn(agentId);
   if (!harnessArn) {
@@ -472,8 +506,14 @@ async function streamViaAgentcoreJwt(
         'X-Amzn-Bedrock-AgentCore-Runtime-Session-Id': runtimeSessionId,
       },
       body: requestBody,
+      signal,
     });
   } catch (err) {
+    if (isAbort(err, signal)) {
+      debugEmit('done', 'cancelled before response');
+      onDone();
+      return;
+    }
     const msg = err instanceof Error ? err.message : String(err);
     debugEmit('error', 'fetch threw', { text: msg });
     onError(`Network error: ${msg}`);
@@ -502,7 +542,7 @@ async function streamViaAgentcoreJwt(
     contentType: response.headers.get('content-type'),
   });
   // Always AWS event-stream for Bearer InvokeHarness (not Amplify SSE).
-  await readAwsEventStream(response.body, onText, onError, onDone, onStatus);
+  await readAwsEventStream(response.body, onText, onError, onDone, onStatus, signal);
 }
 
 async function streamViaApiChat(
@@ -513,7 +553,8 @@ async function streamViaApiChat(
   onText: (chunk: string) => void,
   onError: (msg: string) => void,
   onDone: () => void,
-  onStatus?: (msg: string) => void
+  onStatus?: (msg: string) => void,
+  signal?: AbortSignal
 ): Promise<void> {
   const requestBody = JSON.stringify({ messages, sessionId, agentId });
 
@@ -531,8 +572,14 @@ async function streamViaApiChat(
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: requestBody,
+      signal,
     });
   } catch (err) {
+    if (isAbort(err, signal)) {
+      debugEmit('done', 'cancelled before response');
+      onDone();
+      return;
+    }
     const msg = err instanceof Error ? err.message : String(err);
     debugEmit('error', 'fetch threw', { text: msg });
     onError(`Network error: ${msg}`);
@@ -554,7 +601,7 @@ async function streamViaApiChat(
     return;
   }
 
-  await readSseStream(response.body, onText, onError, onDone, onStatus);
+  await readSseStream(response.body, onText, onError, onDone, onStatus, signal);
 }
 
 export async function streamChat(
@@ -564,7 +611,8 @@ export async function streamChat(
   onText: (chunk: string) => void,
   onError: (msg: string) => void,
   onDone: () => void,
-  onStatus?: (msg: string) => void
+  onStatus?: (msg: string) => void,
+  signal?: AbortSignal
 ): Promise<void> {
   const token = resolveAccessToken();
 
@@ -612,7 +660,8 @@ export async function streamChat(
       onText,
       onError,
       onDone,
-      onStatus
+      onStatus,
+      signal
     );
     return;
   }
@@ -629,5 +678,15 @@ export async function streamChat(
       hasToken: Boolean(token),
     });
   }
-  await streamViaApiChat(messages, sessionId, agentId, token, onText, onError, onDone, onStatus);
+  await streamViaApiChat(
+    messages,
+    sessionId,
+    agentId,
+    token,
+    onText,
+    onError,
+    onDone,
+    onStatus,
+    signal
+  );
 }

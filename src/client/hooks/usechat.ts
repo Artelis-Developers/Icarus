@@ -51,6 +51,8 @@ export function useChat() {
   const hydrated = useRef(false);
   const draftAgentIdRef = useRef<AgentId>(draftAgentId);
   draftAgentIdRef.current = draftAgentId;
+  /** Controller for the turn in flight, so stop() can cut it short. */
+  const abortRef = useRef<AbortController | null>(null);
 
   /* ── Hydrate from storage once ── */
   useEffect(() => {
@@ -128,6 +130,11 @@ export function useChat() {
     [wip, activeId, draftAgentId]
   );
 
+  /** Cut the in-flight turn short. Whatever streamed so far is kept. */
+  const stop = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
+
   /* ── Send ── */
   const send = useCallback(
     async (raw?: string) => {
@@ -175,6 +182,9 @@ export function useChat() {
       setInput('');
       setSending(true);
 
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       // Add placeholder assistant message.
       setConversations((prev) =>
         prev.map((c) =>
@@ -213,41 +223,54 @@ export function useChat() {
         });
       };
 
-      await streamChat(
-        history,
-        sessionId,
-        agentId,
-        (chunk) => {
-          assistantText += chunk;
-          scheduleAssistant();
-        },
-        (errorMsg) => {
-          if (rafId) {
-            cancelAnimationFrame(rafId);
-            rafId = 0;
-          }
-          // Only use error styling when there is no successful reply; otherwise keep
-          // markdown rendering (same as /api/chat agents) and append a note.
-          if (assistantText) {
-            applyAssistant(`${assistantText}\n\n_${errorMsg}_`, false);
-          } else {
-            applyAssistant(errorMsg, true);
-          }
-        },
-        () => {
-          if (rafId) {
-            cancelAnimationFrame(rafId);
-            rafId = 0;
-          }
-          // Ensure final bubble stays in normal markdown mode after stream completes.
-          if (assistantText) applyAssistant(assistantText, false);
-        },
-        (statusMsg) => {
-          if (!assistantText) applyAssistant(`_${statusMsg}_`, false);
-        }
-      );
-
-      setSending(false);
+      try {
+        await streamChat(
+          history,
+          sessionId,
+          agentId,
+          (chunk) => {
+            assistantText += chunk;
+            scheduleAssistant();
+          },
+          (errorMsg) => {
+            if (rafId) {
+              cancelAnimationFrame(rafId);
+              rafId = 0;
+            }
+            // Only use error styling when there is no successful reply; otherwise keep
+            // markdown rendering (same as /api/chat agents) and append a note.
+            if (assistantText) {
+              applyAssistant(`${assistantText}\n\n_${errorMsg}_`, false);
+            } else {
+              applyAssistant(errorMsg, true);
+            }
+          },
+          () => {
+            if (rafId) {
+              cancelAnimationFrame(rafId);
+              rafId = 0;
+            }
+            // Ensure final bubble stays in normal markdown mode after stream completes.
+            // On a stop this keeps the partial reply rather than discarding it.
+            if (assistantText) {
+              applyAssistant(
+                controller.signal.aborted ? `${assistantText}\n\n_Stopped._` : assistantText,
+                false
+              );
+            } else if (controller.signal.aborted) {
+              applyAssistant('_Stopped._', false);
+            }
+          },
+          (statusMsg) => {
+            if (!assistantText) applyAssistant(`_${statusMsg}_`, false);
+          },
+          controller.signal
+        );
+      } finally {
+        // A newer turn may already own the ref; only clear our own.
+        if (abortRef.current === controller) abortRef.current = null;
+        setSending(false);
+      }
     },
     [input, sending, activeId, conversations, draftAgentId]
   );
@@ -272,6 +295,7 @@ export function useChat() {
     inputRef,
     // actions
     send,
+    stop,
     newChat,
     openConversation,
     selectAgent,
