@@ -9,9 +9,18 @@ interface Props {
   agentId: AgentId;
   onToggleSidebar: () => void;
   onWip: (label: string) => void;
+  debugOpen: boolean;
+  onToggleDebug: () => void;
 }
 
-export function TopBar({ title, agentId, onToggleSidebar, onWip }: Props) {
+export function TopBar({
+  title,
+  agentId,
+  onToggleSidebar,
+  onWip,
+  debugOpen,
+  onToggleDebug,
+}: Props) {
   const agent = agentById(agentId);
   return (
     <header className={styles.header}>
@@ -31,6 +40,20 @@ export function TopBar({ title, agentId, onToggleSidebar, onWip }: Props) {
           <div className={styles.subtitle}>{agent.name} · Icarus</div>
         </div>
       </div>
+
+      <button
+        className={styles.searchBtn}
+        onClick={onToggleDebug}
+        title="Raw transport capture — request, headers, every stream chunk"
+        aria-pressed={debugOpen}
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M8 3v4M16 3v4" />
+          <rect x="4" y="7" width="16" height="14" rx="3" />
+          <path d="M9 13h6M9 17h3" />
+        </svg>
+        <span className={styles.searchLabel}>{debugOpen ? 'Hide raw' : 'Raw'}</span>
+      </button>
 
       <button className={styles.searchBtn} onClick={() => onWip('Search — coming soon')}>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

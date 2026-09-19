@@ -15,6 +15,13 @@ import {
   resolveJwtInvokeArn,
   useAgentcoreJwtInvoke,
 } from '@/client/lib/agentcore';
+import {
+  bytesToHex,
+  debugEmit,
+  debugNewRun,
+  describeToken,
+  headersToObject,
+} from '@/client/lib/debug-bus';
 
 /**
  * Resolve the portal Cognito access token for the Authorization header, trying
@@ -208,7 +215,9 @@ async function readSseStream(
     const { done, value } = await reader.read();
     if (done) break;
 
-    buffer += decoder.decode(value, { stream: true });
+    const piece = decoder.decode(value, { stream: true });
+    debugEmit('chunk', `sse chunk · ${value.length} B`, { bytes: value.length, text: piece });
+    buffer += piece;
     const lines = buffer.split('\n');
     buffer = lines.pop() || '';
 
@@ -218,7 +227,9 @@ async function readSseStream(
 
       if (trimmed.startsWith('data:')) {
         const data = trimmed.slice(5).trimStart();
+        debugEmit('event', 'sse data', { text: data });
         if (handleSseDataLine(data, onText, onError, onStatus) === 'done') {
+          debugEmit('done', 'sse [DONE]');
           onDone();
           return;
         }
@@ -242,6 +253,7 @@ async function readSseStream(
     }
   }
 
+  debugEmit('done', 'sse stream closed');
   onDone();
 }
 
@@ -286,6 +298,7 @@ async function readAwsEventStream(
         if (text) {
           if (!gotText) console.info('[chat] first contentBlockDelta text received');
           gotText = true;
+          debugEmit('delta', 'contentBlockDelta.text', { text });
           onText(text);
         }
       } catch {
@@ -301,6 +314,7 @@ async function readAwsEventStream(
         /"runtimeClientError"\s*:\s*\{[^}]*?"message"\s*:\s*"((?:[^"\\]|\\.)*)"/;
       const errMatch = errRe.exec(buffer);
       if (errMatch?.[1]) {
+        debugEmit('error', 'runtimeClientError frame', { text: errMatch[1] });
         try {
           onError(asUtf8(JSON.parse(`"${errMatch[1]}"`) as string));
         } catch {
@@ -311,6 +325,7 @@ async function readAwsEventStream(
 
     const toolRe = /"toolUse"\s*:\s*\{\s*"name"\s*:\s*"((?:[^"\\]|\\.)*)"/;
     const toolMatch = toolRe.exec(buffer);
+    if (toolMatch?.[1]) debugEmit('event', 'toolUse', { text: toolMatch[1] });
     if (toolMatch?.[1] && !gotText) {
       try {
         onStatus?.(`Using tool: ${JSON.parse(`"${toolMatch[1]}"`)}`);
@@ -333,17 +348,27 @@ async function readAwsEventStream(
     const { done, value } = await reader.read();
     if (done) break;
     if (!value?.length) continue;
-    buffer += decoder.decode(value, { stream: true });
+    const piece = decoder.decode(value, { stream: true });
+    debugEmit('chunk', `event-stream chunk · ${value.length} B`, {
+      bytes: value.length,
+      text: piece,
+      hex: bytesToHex(value),
+    });
+    buffer += piece;
     emitDeltaTexts();
   }
 
-  buffer += decoder.decode();
+  const tail = decoder.decode();
+  if (tail) debugEmit('chunk', 'event-stream flush', { bytes: tail.length, text: tail });
+  buffer += tail;
   emitDeltaTexts();
 
   if (!gotText) {
     console.warn('[chat] InvokeHarness stream ended with no text deltas');
+    debugEmit('error', 'stream ended with no delta.text');
     onError('Agent stream finished with no text (event-stream parse found no delta.text)');
   }
+  debugEmit('done', 'event-stream closed', { detail: { gotText } });
   onDone();
 }
 
@@ -398,6 +423,26 @@ async function streamViaAgentcoreJwt(
     });
   }
 
+  const requestBody = JSON.stringify({ messages: harnessMessages });
+
+  debugEmit('request', 'POST InvokeHarness', {
+    detail: {
+      url,
+      method: 'POST',
+      agentId,
+      harnessArn,
+      sessionId: runtimeSessionId,
+      requestHeaders: {
+        Authorization: '<redacted — token claims below>',
+        'Content-Type': 'application/json',
+        'X-Amzn-Bedrock-AgentCore-Runtime-Session-Id': runtimeSessionId,
+      },
+      token: describeToken(token),
+      historySkipped: messages.length - 1,
+    },
+    text: requestBody,
+  });
+
   let response: Response;
   try {
     response = await fetch(url, {
@@ -407,16 +452,29 @@ async function streamViaAgentcoreJwt(
         'Content-Type': 'application/json',
         'X-Amzn-Bedrock-AgentCore-Runtime-Session-Id': runtimeSessionId,
       },
-      body: JSON.stringify({ messages: harnessMessages }),
+      body: requestBody,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    debugEmit('error', 'fetch threw', { text: msg });
     onError(`Network error: ${msg}`);
     return;
   }
 
+  debugEmit('response', `${response.status} ${response.statusText}`, {
+    detail: {
+      status: response.status,
+      ok: response.ok,
+      type: response.type,
+      hasBody: Boolean(response.body),
+      responseHeaders: headersToObject(response.headers),
+    },
+  });
+
   if (!response.ok || !response.body) {
-    onError(await formatHttpError(response));
+    const msg = await formatHttpError(response);
+    debugEmit('error', 'non-OK response', { text: msg });
+    onError(msg);
     return;
   }
 
@@ -438,6 +496,13 @@ async function streamViaApiChat(
   onDone: () => void,
   onStatus?: (msg: string) => void
 ): Promise<void> {
+  const requestBody = JSON.stringify({ messages, sessionId, agentId });
+
+  debugEmit('request', 'POST /api/chat', {
+    detail: { url: '/api/chat', agentId, sessionId, token: describeToken(token) },
+    text: requestBody,
+  });
+
   let response: Response;
   try {
     response = await fetch('/api/chat', {
@@ -446,16 +511,27 @@ async function streamViaApiChat(
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ messages, sessionId, agentId }),
+      body: requestBody,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    debugEmit('error', 'fetch threw', { text: msg });
     onError(`Network error: ${msg}`);
     return;
   }
 
+  debugEmit('response', `${response.status} ${response.statusText}`, {
+    detail: {
+      status: response.status,
+      ok: response.ok,
+      responseHeaders: headersToObject(response.headers),
+    },
+  });
+
   if (!response.ok || !response.body) {
-    onError(await formatHttpError(response));
+    const msg = await formatHttpError(response);
+    debugEmit('error', 'non-OK response', { text: msg });
+    onError(msg);
     return;
   }
 
@@ -472,6 +548,18 @@ export async function streamChat(
   onStatus?: (msg: string) => void
 ): Promise<void> {
   const token = resolveAccessToken();
+
+  debugNewRun();
+  debugEmit('invoke', `send · ${agentId}`, {
+    detail: {
+      agentId,
+      sessionId,
+      path: useAgentcoreJwtInvoke(agentId) ? 'AgentCore JWT InvokeHarness' : 'Amplify /api/chat',
+      messageCount: messages.length,
+      href: typeof location === 'undefined' ? null : location.href,
+    },
+    text: messages[messages.length - 1]?.content ?? '',
+  });
 
   if (useAgentcoreJwtInvoke(agentId)) {
     const arn = resolveJwtInvokeArn(agentId);

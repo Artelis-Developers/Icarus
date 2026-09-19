@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useChat } from '../hooks/usechat';
 import { Sidebar } from '../components/sidebar';
 import { TopBar } from '../components/topbar';
@@ -8,6 +9,7 @@ import { MessageBubble } from '../components/messagebubble';
 import { TypingIndicator } from '../components/typingindicator';
 import { Composer } from '../components/composer';
 import { WipToast } from '../components/wiptoast';
+import { DebugPanel } from '../components/debugpanel';
 import shell from '../styles/chatapp.module.css';
 
 export default function ChatPage() {
@@ -34,6 +36,9 @@ export default function ChatPage() {
     wip,
   } = useChat();
 
+  // Raw wire capture is always recording; this only toggles the viewer.
+  const [debugOpen, setDebugOpen] = useState(false);
+
   // Three-dot indicator shows while sending, before the first token lands
   // (the placeholder assistant message is still empty).
   const showTyping = sending && messages.length > 0 && messages[messages.length - 1].content === '';
@@ -59,7 +64,14 @@ export default function ChatPage() {
       />
 
       <main className={shell.main}>
-        <TopBar title={title} agentId={currentAgentId} onToggleSidebar={toggleSidebar} onWip={wip} />
+        <TopBar
+          title={title}
+          agentId={currentAgentId}
+          onToggleSidebar={toggleSidebar}
+          onWip={wip}
+          debugOpen={debugOpen}
+          onToggleDebug={() => setDebugOpen((v) => !v)}
+        />
 
         <div className={shell.scroll}>
           {isEmpty ? (
@@ -87,6 +99,8 @@ export default function ChatPage() {
 
         <WipToast toasts={toasts} />
       </main>
+
+      <DebugPanel open={debugOpen} onClose={() => setDebugOpen(false)} />
     </div>
   );
 }
