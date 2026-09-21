@@ -36,6 +36,14 @@ export function AgentIcon({ agent, size = 18 }: Props) {
           <path d="M12 22.08V12" />
         </svg>
       );
+    case 'order_staging':
+      return (
+        <svg {...svgBase} {...dims}>
+          <path d="M9 3h6" />
+          <path d="M10 3v6.5L4.8 18a2 2 0 0 0 1.7 3h11a2 2 0 0 0 1.7-3L14 9.5V3" />
+          <path d="M7.5 15h9" />
+        </svg>
+      );
     // Parked with agents.ts: 'dev' | 'req_plan'
     case 'general':
     default:

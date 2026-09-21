@@ -30,10 +30,13 @@ frontend:
           ORDER_ARN="${NEXT_PUBLIC_HARNESS_ARN_ORDER:-${HARNESS_ARN_ORDER}}"
           # JWT-only agent — deliberately no HARNESS_ARN_NEWORDER / SSR fallback.
           NEWORDER_ARN="${NEXT_PUBLIC_HARNESS_ARN_NEWORDER}"
+          # JWT-only staging/dev agent — deliberately no SSR fallback.
+          ORDER_STAGING_ARN="${NEXT_PUBLIC_HARNESS_ARN_ORDER_STAGING}"
           echo "NEXT_PUBLIC_HARNESS_ARN=$GENERAL_ARN" >> .env.production
           echo "NEXT_PUBLIC_HARNESS_ARN_ORDER=$ORDER_ARN" >> .env.production
           echo "NEXT_PUBLIC_HARNESS_ARN_NEWORDER=$NEWORDER_ARN" >> .env.production
-          echo "JWT build: GENERAL_ARN len=${#GENERAL_ARN} ORDER_ARN len=${#ORDER_ARN} NEWORDER_ARN len=${#NEWORDER_ARN} qualifier=${NEXT_PUBLIC_AGENTCORE_QUALIFIER:-'(none)'}"
+          echo "NEXT_PUBLIC_HARNESS_ARN_ORDER_STAGING=$ORDER_STAGING_ARN" >> .env.production
+          echo "JWT build: GENERAL_ARN len=${#GENERAL_ARN} ORDER_ARN len=${#ORDER_ARN} NEWORDER_ARN len=${#NEWORDER_ARN} ORDER_STAGING_ARN len=${#ORDER_STAGING_ARN} qualifier=${NEXT_PUBLIC_AGENTCORE_QUALIFIER:-'(none)'}"
 
         - npm run build
   artifacts:

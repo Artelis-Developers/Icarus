@@ -1,18 +1,19 @@
 /**
  * Agent catalogue for Icarus.
  *
- * `general`, `order` and `neworder` use browser → AgentCore HTTPS with Cognito JWT
- * when `NEXT_PUBLIC_HARNESS_ARN` / `NEXT_PUBLIC_HARNESS_ARN_ORDER` /
- * `NEXT_PUBLIC_HARNESS_ARN_NEWORDER` are set (see src/client/lib/agentcore.ts);
- * otherwise Amplify `/api/chat` (IAM InvokeHarness). `neworder` is JWT-only — it has
- * no HARNESS_ARN_NEWORDER server mapping by design.
+ * `general`, `order`, `neworder` and `order_staging` use browser → AgentCore HTTPS
+ * with Cognito JWT when `NEXT_PUBLIC_HARNESS_ARN` / `NEXT_PUBLIC_HARNESS_ARN_ORDER` /
+ * `NEXT_PUBLIC_HARNESS_ARN_NEWORDER` / `NEXT_PUBLIC_HARNESS_ARN_ORDER_STAGING` are set
+ * (see src/client/lib/agentcore.ts); otherwise Amplify `/api/chat` (IAM InvokeHarness).
+ * `neworder` and `order_staging` are JWT-only — no server HARNESS_ARN_* mapping by design.
+ * `order_staging` is a dev/staging bot, not a production assistant.
  * Unwired agents show a "coming soon" toast.
  *
  * Parked (re-add when ready): `dev` / `req_plan` → `/api/chat` IAM InvokeAgentRuntime
  * (runtime path + runtimeUserId still in server/api/chat/route.ts).
  */
 
-export type AgentId = 'general' | 'order' | 'neworder';
+export type AgentId = 'general' | 'order' | 'neworder' | 'order_staging';
 
 export interface Agent {
   id: AgentId;
@@ -28,6 +29,7 @@ export const AGENTS: Agent[] = [
   { id: 'general', name: 'General Assistant', desc: 'Everyday help across the group', color: 'var(--accent)', wired: true },
   { id: 'order', name: 'Order Agent', desc: 'Order products anywhere', color: '#5c7cfa', wired: true },
   { id: 'neworder', name: 'New Order Agent', desc: 'Order products anywhere', color: '#4dabf7', wired: true },
+  { id: 'order_staging', name: 'Order Staging', desc: 'Staging build — dev testing only', color: '#fab005', wired: true },
   // Parked — restore with AgentId + SUGGESTIONS + AgentIcon + RUNTIME_ENV_BY_AGENT:
   // { id: 'dev', name: 'Request Developer', desc: 'Scope and draft software requests', color: '#ffa94d', wired: true },
   // { id: 'req_plan', name: 'Request Planner', desc: 'Plan and break down requests', color: '#da77f2', wired: true },
@@ -68,5 +70,11 @@ export const SUGGESTIONS: Record<AgentId, { title: string; sub: string }[]> = {
     { title: 'Find a product', sub: 'Search for the right product for your client\'s needs.' },
     { title: 'Place an Order', sub: 'Place an order for a product or service.' },
     { title: 'Track an order', sub: 'Check the status of an existing order.' },
+  ],
+  order_staging: [
+    { title: 'Smoke-test an order', sub: 'Place a throwaway order against the staging harness.' },
+    { title: 'Find a product', sub: 'Check product lookup before it ships to production.' },
+    { title: 'Get address information', sub: 'Verify address resolution on the staging build.' },
+    { title: 'Track an order', sub: 'Check status handling for a staging order.' },
   ],
 };
