@@ -4,8 +4,8 @@
  * Harness-managed agents cannot use /runtimes/.../invocations. Use InvokeHarness:
  *   POST /harnesses/invoke?harnessArn=...  + Authorization: Bearer <Cognito JWT>
  *
- * - `general` + `order`: JWT → InvokeHarness
- * - all other agents: Amplify `/api/chat` (IAM InvokeHarness)
+ * - `general`, `order` and `order_staging`: JWT → InvokeHarness
+ * - unwired agents: Amplify `/api/chat` (IAM InvokeHarness)
  *
  * NEXT_PUBLIC_HARNESS_ARN* must be **harness** ARNs (`…:harness/…`), not runtime ARNs.
  *
@@ -16,7 +16,7 @@
 import type { AgentId } from '@/client/lib/agents';
 
 /** Agents that use inbound JWT HTTPS instead of Amplify SSR. */
-const JWT_INVOKE_AGENTS = new Set<AgentId>(['general', 'order', 'neworder', 'order_staging']);
+const JWT_INVOKE_AGENTS = new Set<AgentId>(['general', 'order', 'order_staging']);
 
 export function agentcoreRegion(): string {
   return (
@@ -42,9 +42,6 @@ export function resolveJwtInvokeArn(agentId: string): string {
 
   if (id === 'general') {
     return process.env.NEXT_PUBLIC_HARNESS_ARN?.trim() || '';
-  }
-  if (id === 'neworder') {
-    return process.env.NEXT_PUBLIC_HARNESS_ARN_NEWORDER?.trim() || '';
   }
   if (id === 'order_staging') {
     return process.env.NEXT_PUBLIC_HARNESS_ARN_ORDER_STAGING?.trim() || '';
